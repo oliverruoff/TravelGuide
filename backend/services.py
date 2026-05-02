@@ -84,40 +84,72 @@ def build_overpass_query(lat: float, lng: float, radius_meters: int) -> str:
 
 
 async def fetch_overpass(settings: Settings, lat: float, lng: float, radius_meters: int) -> list[RawGeoCandidate]:
+    candidates = await _fetch_overpass_radius(settings, lat, lng, radius_meters)
+    if 0 < travel_candidate_count(candidates) < 8 and radius_meters < 1000:
+        expanded = await _fetch_overpass_radius(settings, lat, lng, 1000)
+        merged = {item.id: item for item in [*expanded, *candidates]}
+        return sorted(merged.values(), key=lambda item: (item.distanceMeters, item.name))[:80]
+    return candidates
+
+
+def travel_candidate_count(candidates: list[RawGeoCandidate]) -> int:
+    return sum(1 for candidate in candidates if travel_candidate_score(candidate) > 0)
+
+
+def travel_candidate_score(candidate: RawGeoCandidate) -> int:
+    tag_blob = " ".join([candidate.name, *candidate.tags.keys(), *candidate.tags.values()]).lower()
+    positive = [
+        "tourism",
+        "information",
+        "historic",
+        "museum",
+        "artwork",
+        "memorial",
+        "viewpoint",
+        "place_of_worship",
+        "church",
+        "village",
+        "waterway",
+        "river",
+        "restaurant",
+        "trail",
+        "radweg",
+        "map",
+        "board",
+        "public",
+    ]
+    negative = [
+        "kindergarten",
+        "school",
+        "bank",
+        "atm",
+        "industrial",
+        "fire_station",
+        "hairdresser",
+        "company",
+        "gmbh",
+    ]
+    return sum(1 for word in positive if word in tag_blob) - sum(2 for word in negative if word in tag_blob)
+
+
+async def _fetch_overpass_radius(settings: Settings, lat: float, lng: float, radius_meters: int) -> list[RawGeoCandidate]:
     query = build_overpass_query(lat, lng, radius_meters)
     try:
-        async with httpx.AsyncClient(timeout=22) as client:
-            response = await client.post(settings.overpass_url, data={"data": query})
+        async with httpx.AsyncClient(timeout=22, headers={"User-Agent": "TravelGuideGenAI/0.1 local-prototype"}) as client:
+            response = await client.post(
+                settings.overpass_url,
+                content=query,
+                headers={"Content-Type": "application/x-www-form-urlencoded"},
+            )
             response.raise_for_status()
-            return normalize_overpass(response.json(), lat, lng)
+            max_distance = radius_meters * 1.15
+            return [candidate for candidate in normalize_overpass(response.json(), lat, lng) if candidate.distanceMeters <= max_distance]
     except Exception:
         return fallback_candidates(lat, lng)
 
 
 def fallback_candidates(lat: float, lng: float) -> list[RawGeoCandidate]:
-    names = [
-        ("Museum Island", "tourism", "museum", 0.0018, 0.0012),
-        ("Historic Quarter", "historic", "yes", -0.0014, 0.0011),
-        ("Riverside Walk", "waterway", "river", 0.0012, -0.0015),
-        ("Old Bridge", "bridge", "yes", -0.0017, -0.0012),
-        ("City Square", "place", "square", 0.0009, 0.0019),
-        ("Memorial Stone", "historic", "memorial", -0.0011, 0.0004),
-        ("Pocket Garden", "leisure", "park", 0.0015, -0.0008),
-        ("Viewpoint", "tourism", "viewpoint", -0.0008, -0.0017),
-        ("Town Hall", "building", "civic", 0.0005, 0.0014),
-        ("Public Artwork", "artwork_type", "sculpture", -0.0019, 0.0009),
-    ]
-    return [
-        RawGeoCandidate(
-            id=f"fallback/{index}",
-            name=name,
-            lat=lat + dlat,
-            lng=lng + dlng,
-            tags={"name": name, key: value},
-            distanceMeters=distance_meters(lat, lng, lat + dlat, lng + dlng),
-        )
-        for index, (name, key, value, dlat, dlng) in enumerate(names, start=1)
-    ]
+    return []
 
 
 def _extract_json_array(text: str) -> list[dict[str, Any]]:
@@ -151,22 +183,18 @@ async def minimax_chat(settings: Settings, messages: list[dict[str, str]], strea
 
 
 def heuristic_select(candidates: list[RawGeoCandidate]) -> list[PoiSummary]:
-    weights = ["tourism", "historic", "museum", "artwork_type", "memorial", "viewpoint", "leisure", "natural", "amenity"]
-
     def score(candidate: RawGeoCandidate) -> tuple[int, float]:
-        tag_blob = " ".join([*candidate.tags.keys(), *candidate.tags.values()]).lower()
-        rank = sum(1 for word in weights if word in tag_blob)
-        return (-rank, candidate.distanceMeters)
+        return (-travel_candidate_score(candidate), candidate.distanceMeters)
 
-    selected = sorted(candidates, key=score)[:10]
+    selected = [candidate for candidate in sorted(candidates, key=score) if travel_candidate_score(candidate) > 0][:10]
     return [
         PoiSummary(
             id=item.id,
             name=item.name,
             lat=item.lat,
             lng=item.lng,
-            category=item.tags.get("tourism") or item.tags.get("historic") or item.tags.get("amenity") or "Place",
-            oneLiner=f"A nearby place worth a closer look, about {round(item.distanceMeters)} m away.",
+            category=item.tags.get("tourism") or item.tags.get("historic") or item.tags.get("amenity") or item.tags.get("place") or item.tags.get("waterway") or "Local place",
+            oneLiner=f"Real nearby map point, about {round(item.distanceMeters)} m away.",
             confidence=0.45,
             sourceRefs=["OpenStreetMap"],
         )
@@ -185,12 +213,35 @@ async def select_pois(settings: Settings, candidates: list[RawGeoCandidate], lan
             "lat": c.lat,
             "lng": c.lng,
             "distanceMeters": c.distanceMeters,
-            "tags": {k: v for k, v in c.tags.items() if k in {"tourism", "historic", "amenity", "leisure", "natural", "building", "place", "waterway"}},
+            "tags": {
+                k: v
+                for k, v in c.tags.items()
+                if k
+                in {
+                    "tourism",
+                    "historic",
+                    "amenity",
+                    "leisure",
+                    "natural",
+                    "building",
+                    "place",
+                    "waterway",
+                    "information",
+                    "religion",
+                    "denomination",
+                    "shop",
+                    "cuisine",
+                    "description",
+                }
+            },
         }
         for c in candidates[:60]
     ]
     prompt = (
-        "Select up to 10 POIs for a polished mobile travel guide. "
+        "Select up to 10 POIs for a polished mobile travel guide, but return fewer if only a few are actually worthwhile. "
+        "Use ONLY the provided candidate ids. Do not invent places, do not rename them into famous attractions, and do not change coordinates. "
+        "For small villages, prefer real local context such as rivers, village centers, churches, information boards, old public buildings, restaurants, and trails. "
+        "Avoid schools, kindergartens, banks, industrial companies, hairdressers, and emergency services unless the candidate itself clearly has visitor value. "
         "Return ONLY a JSON array. Each item must contain id, name, lat, lng, category, oneLiner, confidence. "
         f"Use language: {language}. Prefer culturally interesting, scenic, historic, unusual, or locally meaningful places."
     )
@@ -204,7 +255,30 @@ async def select_pois(settings: Settings, candidates: list[RawGeoCandidate], lan
         )
         content = response.json()["choices"][0]["message"]["content"]
         items = _extract_json_array(content)
-        return [PoiSummary(**item) for item in items[:10]]
+        by_id = {candidate.id: candidate for candidate in candidates}
+        selected: list[PoiSummary] = []
+        seen: set[str] = set()
+        for item in items:
+            candidate_id = str(item.get("id", ""))
+            candidate = by_id.get(candidate_id)
+            if not candidate or candidate_id in seen:
+                continue
+            seen.add(candidate_id)
+            selected.append(
+                PoiSummary(
+                    id=candidate.id,
+                    name=candidate.name,
+                    lat=candidate.lat,
+                    lng=candidate.lng,
+                    category=str(item.get("category") or candidate.tags.get("tourism") or candidate.tags.get("amenity") or candidate.tags.get("place") or "Local place"),
+                    oneLiner=str(item.get("oneLiner") or f"Real nearby map point, about {round(candidate.distanceMeters)} m away."),
+                    confidence=float(item.get("confidence") or 0.6),
+                    sourceRefs=["OpenStreetMap"],
+                )
+            )
+            if len(selected) >= 10:
+                break
+        return selected or heuristic_select(candidates)
     except Exception:
         return heuristic_select(candidates)
 
