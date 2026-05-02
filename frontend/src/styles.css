@@ -88,6 +88,15 @@ input, select {
 .picking-location .map {
   cursor: crosshair;
 }
+.fake-location-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  border: 0;
+  padding: 0;
+  background: rgba(38, 125, 240, 0.06);
+  cursor: crosshair;
+}
 .accuracy {
   position: absolute;
   left: 12px;
@@ -103,7 +112,7 @@ input, select {
   font-weight: 800;
   border: 0;
   color: #17201c;
-  z-index: 3;
+  z-index: 5;
 }
 
 .pick-location-hint {
@@ -121,7 +130,7 @@ input, select {
   box-shadow: 0 14px 34px rgba(0,0,0,0.26);
   font-size: 12px;
   font-weight: 900;
-  z-index: 2;
+  z-index: 6;
   pointer-events: none;
   white-space: nowrap;
 }
@@ -184,17 +193,19 @@ input, select {
   height: 50px;
   display: grid;
   place-items: center;
+  z-index: 7 !important;
+  pointer-events: none;
 }
 .user-marker svg {
-  width: 38px;
-  height: 50px;
+  width: 42px;
+  height: 54px;
   overflow: visible;
-  filter: drop-shadow(0 12px 18px rgba(0,0,0,0.34));
+  filter: drop-shadow(0 12px 18px rgba(0,0,0,0.4));
 }
 .user-marker path {
-  fill: #db2c2c;
+  fill: #e11d2f;
   stroke: #fff;
-  stroke-width: 2.4;
+  stroke-width: 2.8;
 }
 .user-marker circle {
   fill: #fff;

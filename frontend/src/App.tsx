@@ -1,13 +1,23 @@
 import { AnimatePresence, motion } from 'framer-motion'
 import { Award, Bookmark, Compass, LocateFixed, MapPin, MousePointer2, Play, RefreshCw, Sparkles, Volume2, X } from 'lucide-react'
 import maplibregl from 'maplibre-gl'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { type PointerEvent, useEffect, useMemo, useRef, useState } from 'react'
 import { enrichPoi, getCandidates, selectPois, streamDetail } from './api'
 import { db, markVisited, savePoi, unlockAchievement, type StoredPoi } from './db'
 import { useAppStore } from './store'
 import type { GeoFix, PoiSummary } from './types'
 
 const fallbackBerlin: GeoFix = { latitude: 52.520008, longitude: 13.404954, accuracyMeters: 9999, timestamp: Date.now() }
+const savedFakeGeoKey = 'travelguide.fakeGeo'
+
+function readSavedFakeGeo(): GeoFix | undefined {
+  try {
+    const raw = localStorage.getItem(savedFakeGeoKey)
+    return raw ? JSON.parse(raw) as GeoFix : undefined
+  } catch {
+    return undefined
+  }
+}
 
 function Onboarding() {
   const { language, setLanguage, setConfigured } = useAppStore()
@@ -154,9 +164,23 @@ function MapPanel({
     }
   }, [fakeLocationMode, onPickLocation])
 
+  function pickFromPointer(event: PointerEvent<HTMLButtonElement>) {
+    if (!fakeLocationMode || !mapRef.current || !mapNode.current) return
+    const rect = mapNode.current.getBoundingClientRect()
+    const point: [number, number] = [event.clientX - rect.left, event.clientY - rect.top]
+    const lngLat = mapRef.current.unproject(point)
+    onPickLocation({
+      latitude: lngLat.lat,
+      longitude: lngLat.lng,
+      accuracyMeters: 5,
+      timestamp: Date.now()
+    })
+  }
+
   return (
     <section className={`map-shell ${fakeLocationMode ? 'picking-location' : ''}`}>
       <div ref={mapNode} className="map" />
+      {fakeLocationMode && <button className="fake-location-layer" onPointerDown={pickFromPointer} aria-label="Place fake location on map" />}
       <button className="accuracy" onClick={onLocationBadgeClick} aria-label="Choose location mode">
         <LocateFixed size={13} /> {locationLabel}
       </button>
@@ -316,13 +340,24 @@ function MainExperience() {
   const [imageLoadingIds, setImageLoadingIds] = useState<Set<string>>(new Set())
   const [locationMenuOpen, setLocationMenuOpen] = useState(false)
   const [fakeLocationMode, setFakeLocationMode] = useState(false)
-  const [locationSource, setLocationSource] = useState<'gps' | 'demo' | 'fake'>('demo')
+  const [locationSource, setLocationSource] = useState<'gps' | 'demo' | 'fake'>(() => readSavedFakeGeo() ? 'fake' : 'demo')
+  const locationSourceRef = useRef(locationSource)
+  const watchIdRef = useRef<number | undefined>(undefined)
+
+  useEffect(() => {
+    locationSourceRef.current = locationSource
+  }, [locationSource])
 
   const selectedGeo = geo ?? fallbackBerlin
 
   function requestLocation() {
     setFakeLocationMode(false)
     setLocationMenuOpen(false)
+    localStorage.removeItem(savedFakeGeoKey)
+    if (watchIdRef.current !== undefined) {
+      navigator.geolocation?.clearWatch(watchIdRef.current)
+      watchIdRef.current = undefined
+    }
     setStatus('Requesting precise location...')
     if (!navigator.geolocation) {
       setGeo(fallbackBerlin)
@@ -332,6 +367,7 @@ function MainExperience() {
     }
     const watchId = navigator.geolocation.watchPosition(
       (position) => {
+        if (locationSourceRef.current === 'fake') return
         setGeo({
           latitude: position.coords.latitude,
           longitude: position.coords.longitude,
@@ -342,22 +378,32 @@ function MainExperience() {
         setStatus('Location ready.')
       },
       () => {
+        if (locationSourceRef.current === 'fake') return
         setGeo(fallbackBerlin)
         setLocationSource('demo')
         setStatus('GPS denied. Showing Berlin demo area.')
       },
       { enableHighAccuracy: true, timeout: 9000, maximumAge: 15000 }
     )
-    window.setTimeout(() => navigator.geolocation.clearWatch(watchId), 30000)
+    watchIdRef.current = watchId
+    window.setTimeout(() => {
+      navigator.geolocation.clearWatch(watchId)
+      if (watchIdRef.current === watchId) watchIdRef.current = undefined
+    }, 30000)
   }
 
   function startFakeLocation() {
+    if (watchIdRef.current !== undefined) {
+      navigator.geolocation?.clearWatch(watchIdRef.current)
+      watchIdRef.current = undefined
+    }
     setLocationMenuOpen(false)
     setFakeLocationMode(true)
     setStatus('Tap anywhere on the map to set a fake location.')
   }
 
   function pickFakeLocation(nextGeo: GeoFix) {
+    localStorage.setItem(savedFakeGeoKey, JSON.stringify(nextGeo))
     setGeo(nextGeo)
     setLocationSource('fake')
     setFakeLocationMode(false)
@@ -368,6 +414,13 @@ function MainExperience() {
   }
 
   useEffect(() => {
+    const savedFakeGeo = readSavedFakeGeo()
+    if (savedFakeGeo) {
+      setGeo(savedFakeGeo)
+      setLocationSource('fake')
+      setStatus('Fake location restored.')
+      return
+    }
     requestLocation()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [setGeo])
