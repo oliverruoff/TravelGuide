@@ -239,6 +239,23 @@ async def wikipedia_image(query: str, language: str = "en") -> str | None:
     return None
 
 
+def fallback_photo_url(poi: PoiSummary) -> str:
+    text = f"{poi.name} {poi.category}".lower()
+    if "river" in text or "water" in text or "riverside" in text:
+        return "https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=480&q=70"
+    if "bridge" in text:
+        return "https://images.unsplash.com/photo-1518005020951-eccb494ad742?auto=format&fit=crop&w=480&q=70"
+    if "park" in text or "garden" in text or "view" in text:
+        return "https://images.unsplash.com/photo-1441974231531-c6227db76b6e?auto=format&fit=crop&w=480&q=70"
+    if "museum" in text or "historic" in text or "memorial" in text:
+        return "https://images.unsplash.com/photo-1566127444979-b3d2b654e3d7?auto=format&fit=crop&w=480&q=70"
+    if "hall" in text or "square" in text or "civic" in text:
+        return "https://images.unsplash.com/photo-1511818966892-d7d671e672a2?auto=format&fit=crop&w=480&q=70"
+    if "art" in text or "sculpture" in text:
+        return "https://images.unsplash.com/photo-1547891654-e66ed7ebb968?auto=format&fit=crop&w=480&q=70"
+    return "https://images.unsplash.com/photo-1473959383416-7d6c84d75c0e?auto=format&fit=crop&w=480&q=70"
+
+
 async def enrich_poi(settings: Settings, poi: PoiSummary, language: str) -> PoiSummary:
     query = f"{poi.name} travel guide landmark"
     try:
@@ -279,9 +296,13 @@ async def enrich_poi(settings: Settings, poi: PoiSummary, language: str) -> PoiS
             if snippets and snippets[0].get("description"):
                 poi.oneLiner = snippets[0]["description"][:140]
         poi.imageUrl = image_url or poi.imageUrl
+        if not poi.imageUrl:
+            poi.imageUrl = fallback_photo_url(poi)
         poi.sourceRefs = [r["url"] for r in snippets if r.get("url")]
         return poi
     except Exception:
+        if not poi.imageUrl:
+            poi.imageUrl = fallback_photo_url(poi)
         return poi
 
 

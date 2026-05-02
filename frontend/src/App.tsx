@@ -53,7 +53,8 @@ function MapPanel({
   fakeLocationMode,
   onLocationBadgeClick,
   onPickLocation,
-  onSelect
+  onSelect,
+  onOpenPoi
 }: {
   geo: GeoFix
   pois: PoiSummary[]
@@ -63,6 +64,7 @@ function MapPanel({
   onLocationBadgeClick: () => void
   onPickLocation: (geo: GeoFix) => void
   onSelect: (poi: PoiSummary) => void
+  onOpenPoi: (poi: PoiSummary) => void
 }) {
   const mapNode = useRef<HTMLDivElement | null>(null)
   const mapRef = useRef<maplibregl.Map | null>(null)
@@ -99,7 +101,12 @@ function MapPanel({
     if (!userMarker.current) {
       const node = document.createElement('div')
       node.className = 'user-marker'
-      node.innerHTML = '<div class="user-pin-shape"><span></span></div>'
+      node.innerHTML = `
+        <svg viewBox="0 0 32 44" aria-hidden="true">
+          <path d="M16 42C11.2 34.3 4 27.4 4 16.4C4 9.5 9.4 4 16 4s12 5.5 12 12.4C28 27.4 20.8 34.3 16 42Z" />
+          <circle cx="16" cy="16" r="5.3" />
+        </svg>
+      `
       userMarker.current = new maplibregl.Marker({ element: node, anchor: 'bottom' }).setLngLat([geo.longitude, geo.latitude]).addTo(mapRef.current)
     } else {
       userMarker.current.setLngLat([geo.longitude, geo.latitude])
@@ -113,12 +120,21 @@ function MapPanel({
       const node = document.createElement('button')
       node.className = `poi-pin ${activePoi?.id === poi.id ? 'active' : ''}`
       node.title = poi.name
-      node.innerHTML = `<div class="poi-pin-shape"></div><span>${poi.name.slice(0, 18)}</span>`
-      node.onclick = () => onSelect(poi)
+      node.innerHTML = `
+        <svg viewBox="0 0 32 44" aria-hidden="true">
+          <path d="M16 42C11.2 34.3 4 27.4 4 16.4C4 9.5 9.4 4 16 4s12 5.5 12 12.4C28 27.4 20.8 34.3 16 42Z" />
+          <circle cx="16" cy="16" r="5.2" />
+        </svg>
+        <span>${poi.name.slice(0, 18)}</span>
+      `
+      node.onclick = () => {
+        onSelect(poi)
+        onOpenPoi(poi)
+      }
       const marker = new maplibregl.Marker({ element: node, anchor: 'bottom' }).setLngLat([poi.lng, poi.lat]).addTo(mapRef.current!)
       markers.current.push(marker)
     })
-  }, [pois, activePoi, onSelect])
+  }, [pois, activePoi, onSelect, onOpenPoi])
 
   useEffect(() => {
     if (!mapRef.current) return
@@ -375,6 +391,7 @@ function MainExperience() {
             if (useAppStore.getState().activePoi?.id === enriched.id) {
               setActivePoi(enriched)
             }
+            setDetailPoi((current) => current?.id === enriched.id ? enriched : current)
           })
           .finally(() => {
             setImageLoadingIds((ids) => {
@@ -415,6 +432,10 @@ function MainExperience() {
         onLocationBadgeClick={() => setLocationMenuOpen((open) => !open)}
         onPickLocation={pickFakeLocation}
         onSelect={setActivePoi}
+        onOpenPoi={(poi) => {
+          setActivePoi(poi)
+          setDetailPoi(poi)
+        }}
       />
       <section className="content-panel">
         <header className="toolbar">

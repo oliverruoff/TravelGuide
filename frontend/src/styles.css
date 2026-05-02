@@ -130,29 +130,25 @@ input, select {
   border: 0;
   padding: 0;
   width: 34px;
-  height: 42px;
+  height: 46px;
   display: grid;
   place-items: center;
   background: transparent;
   color: #102033;
 }
-.poi-pin-shape {
-  width: 26px;
-  height: 34px;
-  border-radius: 50% 50% 50% 8px;
-  background: #267df0;
-  transform: rotate(-45deg);
-  box-shadow: 0 8px 18px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.8);
-  display: grid;
-  place-items: center;
+.poi-pin svg {
+  width: 32px;
+  height: 44px;
+  overflow: visible;
+  filter: drop-shadow(0 8px 12px rgba(0,0,0,0.28));
 }
-.poi-pin-shape::after {
-  content: "";
-  width: 9px;
-  height: 9px;
-  border-radius: 999px;
-  background: #fff;
-  box-shadow: inset 0 1px 2px rgba(0,0,0,0.22);
+.poi-pin path {
+  fill: #267df0;
+  stroke: #fff;
+  stroke-width: 2.2;
+}
+.poi-pin circle {
+  fill: #fff;
 }
 .poi-pin span {
   position: absolute;
@@ -175,8 +171,8 @@ input, select {
   filter: drop-shadow(0 0 0.55rem rgba(38,125,240,0.52));
   z-index: 2;
 }
-.poi-pin.active .poi-pin-shape {
-  background: #104fba;
+.poi-pin.active path {
+  fill: #104fba;
 }
 .poi-pin.active span {
   background: #dbeeff;
@@ -184,29 +180,24 @@ input, select {
 }
 
 .user-marker {
-  width: 34px;
-  height: 44px;
+  width: 38px;
+  height: 50px;
   display: grid;
   place-items: center;
 }
-.user-pin-shape {
-  width: 34px;
-  height: 44px;
-  border-radius: 50% 50% 50% 10px;
-  background: #db2c2c;
-  border: 2px solid rgba(255,255,255,0.95);
-  box-shadow: 0 0 0 7px rgba(219,44,44,0.15), 0 12px 24px rgba(0,0,0,0.36);
-  display: grid;
-  place-items: center;
-  transform: rotate(-45deg);
-  transform-origin: 50% 100%;
+.user-marker svg {
+  width: 38px;
+  height: 50px;
+  overflow: visible;
+  filter: drop-shadow(0 12px 18px rgba(0,0,0,0.34));
 }
-.user-pin-shape span {
-  width: 12px;
-  height: 12px;
-  border-radius: inherit;
-  background: #fff;
-  box-shadow: inset 0 1px 0 rgba(255,255,255,0.8);
+.user-marker path {
+  fill: #db2c2c;
+  stroke: #fff;
+  stroke-width: 2.4;
+}
+.user-marker circle {
+  fill: #fff;
 }
 
 .content-panel {
