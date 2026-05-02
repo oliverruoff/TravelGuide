@@ -140,26 +140,25 @@ input, select {
   padding: 0;
   min-width: 56px;
   max-width: 172px;
-  height: 46px;
+  height: 42px;
   display: flex;
   align-items: center;
-  gap: 3px;
-  background: #eef2f3;
+  gap: 2px;
+  background: linear-gradient(180deg, #f7fbff, #dce9ee);
   color: #111816;
-  border-radius: 999px;
-  box-shadow: 0 10px 22px rgba(0,0,0,0.24), inset 0 1px 0 rgba(255,255,255,0.85);
-  transform: translateX(14px);
+  border-radius: 0 999px 999px 0;
+  box-shadow: 0 10px 22px rgba(0,0,0,0.22), inset 0 1px 0 rgba(255,255,255,0.85);
+  transform: translateX(18px);
 }
 .poi-pin::before {
   content: "";
   position: absolute;
-  left: -16px;
-  bottom: -6px;
-  width: 34px;
-  height: 16px;
-  background: #eef2f3;
-  transform: skewX(-11deg);
-  border-radius: 0 0 0 10px;
+  left: -13px;
+  top: 0;
+  width: 28px;
+  height: 42px;
+  background: inherit;
+  border-radius: 999px 0 0 999px;
   z-index: -1;
 }
 .poi-pin-icon {
@@ -197,12 +196,9 @@ input, select {
   pointer-events: none;
 }
 .poi-pin.active {
-  background: #dbeeff;
+  background: linear-gradient(180deg, #eaf5ff, #cfe7ff);
   box-shadow: 0 12px 26px rgba(28, 91, 177, 0.34), inset 0 0 0 2px rgba(33, 95, 184, 0.22), inset 0 1px 0 rgba(255,255,255,0.9);
   z-index: 2;
-}
-.poi-pin.active::before {
-  background: #dbeeff;
 }
 .poi-pin.active path {
   fill: #104fba;
@@ -344,6 +340,32 @@ input, select {
   grid-row: 1 / 3;
 }
 .thumb img { width: 100%; height: 100%; object-fit: cover; }
+.visual-fallback {
+  width: 100%;
+  height: 100%;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 6px;
+  padding: 10px;
+  color: #fff7df;
+  background:
+    radial-gradient(circle at 32% 24%, rgba(255,255,255,0.2), transparent 24%),
+    linear-gradient(135deg, #314a3e, #a98d55);
+  text-align: center;
+}
+.visual-fallback.large {
+  min-height: 245px;
+}
+.visual-fallback span {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 10px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
 .image-spinner {
   width: 24px;
   height: 24px;
@@ -435,6 +457,15 @@ input, select {
 .detail-body { padding: 18px 18px 12px; max-height: 42vh; overflow: auto; }
 .detail-body h2 { margin: 4px 0 10px; font-size: 30px; line-height: 1.05; letter-spacing: 0; }
 .guide-text { color: #354139; line-height: 1.55; white-space: pre-wrap; }
+.guide-text.muted { color: #718076; }
+.guide-loading {
+  min-height: 160px;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 12px;
+  color: #486056;
+}
 details { margin-top: 12px; font-size: 12px; }
 details a { display: block; color: #315c4b; overflow-wrap: anywhere; margin-top: 6px; }
 .detail-actions { padding: 12px 14px 16px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 9px; }

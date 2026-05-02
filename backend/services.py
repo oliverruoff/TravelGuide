@@ -313,6 +313,60 @@ async def wikipedia_image(query: str, language: str = "en") -> str | None:
     return None
 
 
+IMAGE_STOPWORDS = {
+    "und",
+    "der",
+    "die",
+    "das",
+    "am",
+    "an",
+    "im",
+    "in",
+    "the",
+    "and",
+    "for",
+    "with",
+    "river",
+    "church",
+    "restaurant",
+    "public",
+    "historic",
+    "information",
+}
+
+
+def _poi_image_tokens(poi: PoiSummary) -> list[str]:
+    tokens = re.findall(r"[a-z0-9äöüß]{4,}", poi.name.lower())
+    return [token for token in tokens if token not in IMAGE_STOPWORDS][:4]
+
+
+def _image_result_url(item: dict[str, Any]) -> str | None:
+    return (
+        item.get("thumbnail", {}).get("src")
+        or item.get("properties", {}).get("url")
+        or item.get("url")
+        or item.get("source")
+    )
+
+
+def _is_plausible_image_result(item: dict[str, Any], poi: PoiSummary) -> bool:
+    tokens = _poi_image_tokens(poi)
+    if not tokens:
+        return False
+    haystack = " ".join(
+        str(value or "")
+        for value in [
+            item.get("title"),
+            item.get("url"),
+            item.get("source"),
+            item.get("page_url"),
+            item.get("properties", {}).get("url"),
+            item.get("thumbnail", {}).get("src"),
+        ]
+    ).lower()
+    return any(token in haystack for token in tokens)
+
+
 def fallback_photo_url(poi: PoiSummary) -> str:
     text = f"{poi.name} {poi.category}".lower()
     if "river" in text or "water" in text or "riverside" in text:
@@ -331,7 +385,7 @@ def fallback_photo_url(poi: PoiSummary) -> str:
 
 
 async def enrich_poi(settings: Settings, poi: PoiSummary, language: str) -> PoiSummary:
-    query = f"{poi.name} travel guide landmark"
+    query = f'"{poi.name}" {poi.category} travel guide'
     try:
         web = await brave_search(settings, query)
         try:
@@ -342,8 +396,9 @@ async def enrich_poi(settings: Settings, poi: PoiSummary, language: str) -> PoiS
         image_results = images.get("results", [])[:5]
         image_url = None
         for item in image_results:
-            image_url = item.get("thumbnail", {}).get("src") or item.get("properties", {}).get("url") or item.get("url")
-            if image_url:
+            candidate_url = _image_result_url(item)
+            if candidate_url and _is_plausible_image_result(item, poi):
+                image_url = candidate_url
                 break
         if not image_url:
             try:
@@ -370,13 +425,9 @@ async def enrich_poi(settings: Settings, poi: PoiSummary, language: str) -> PoiS
             if snippets and snippets[0].get("description"):
                 poi.oneLiner = snippets[0]["description"][:140]
         poi.imageUrl = image_url or poi.imageUrl
-        if not poi.imageUrl:
-            poi.imageUrl = fallback_photo_url(poi)
         poi.sourceRefs = [r["url"] for r in snippets if r.get("url")]
         return poi
     except Exception:
-        if not poi.imageUrl:
-            poi.imageUrl = fallback_photo_url(poi)
         return poi
 
 
@@ -442,10 +493,4 @@ async def stream_detail(settings: Settings, poi: PoiSummary, language: str) -> A
                     except Exception:
                         continue
     except Exception:
-        fallback = (
-            f"{poi.name} is one of the nearby places worth slowing down for. "
-            "The available map and search signals suggest it may add local texture to your walk. "
-            "Take a moment to look at the surroundings, the building details, and how people use the space today."
-        )
-        for word in fallback.split(" "):
-            yield word + " "
+        return

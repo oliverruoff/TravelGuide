@@ -128,6 +128,7 @@ function MapPanel({
     markers.current = []
     pois.forEach((poi) => {
       const node = document.createElement('button')
+      node.type = 'button'
       node.className = `poi-pin ${activePoi?.id === poi.id ? 'active' : ''}`
       node.title = poi.name
       node.innerHTML = `
@@ -139,10 +140,15 @@ function MapPanel({
         </span>
         <span>${poi.name.slice(0, 18)}</span>
       `
-      node.onclick = () => {
+      const openMarkerPoi = (event: MouseEvent | PointerEvent | TouchEvent) => {
+        event.preventDefault()
+        event.stopPropagation()
         onSelect(poi)
         onOpenPoi(poi)
       }
+      node.addEventListener('click', openMarkerPoi)
+      node.addEventListener('pointerup', openMarkerPoi)
+      node.addEventListener('touchend', openMarkerPoi)
       const marker = new maplibregl.Marker({ element: node, anchor: 'bottom' }).setLngLat([poi.lng, poi.lat]).addTo(mapRef.current!)
       markers.current.push(marker)
     })
@@ -203,6 +209,29 @@ function cleanOneLiner(text: string) {
   return node.value.replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim()
 }
 
+function PoiVisual({ poi, loading, large = false }: { poi: PoiSummary; loading?: boolean; large?: boolean }) {
+  const [broken, setBroken] = useState(false)
+
+  useEffect(() => {
+    setBroken(false)
+  }, [poi.imageUrl])
+
+  if (loading) {
+    return <span className="image-spinner" />
+  }
+
+  if (poi.imageUrl && !broken) {
+    return <img src={poi.imageUrl} alt="" onError={() => setBroken(true)} />
+  }
+
+  return (
+    <div className={`visual-fallback ${large ? 'large' : ''}`}>
+      <MapPin size={large ? 42 : 24} />
+      <span>{poi.category || 'POI'}</span>
+    </div>
+  )
+}
+
 function PoiCard({
   poi,
   index,
@@ -235,7 +264,7 @@ function PoiCard({
       }}
     >
       <div className="thumb">
-        {poi.imageUrl ? <img src={poi.imageUrl} alt="" /> : imageLoading ? <span className="image-spinner" /> : <MapPin size={24} />}
+        <PoiVisual poi={poi} loading={imageLoading} />
       </div>
       <div className="poi-copy">
         <span>{poi.category}</span>
@@ -259,14 +288,29 @@ function PoiCard({
 function DetailCard({ poi, onClose }: { poi: PoiSummary; onClose: () => void }) {
   const { language } = useAppStore()
   const [text, setText] = useState('')
+  const [loading, setLoading] = useState(true)
+  const [failed, setFailed] = useState(false)
   const [speaking, setSpeaking] = useState(false)
 
   useEffect(() => {
     const controller = new AbortController()
     setText('')
-    streamDetail(poi, language, (chunk) => setText((value) => value + chunk), controller.signal).catch(() => {
-      setText(`${poi.name} is worth a closer look. Take a moment to observe its details, surroundings, and the way it shapes the local walk.`)
-    })
+    setLoading(true)
+    setFailed(false)
+    streamDetail(
+      poi,
+      language,
+      (chunk) => {
+        setLoading(false)
+        setText((value) => value + chunk)
+      },
+      controller.signal
+    )
+      .then(() => setLoading(false))
+      .catch(() => {
+        setLoading(false)
+        setFailed(true)
+      })
     return () => controller.abort()
   }, [poi, language])
 
@@ -294,13 +338,22 @@ function DetailCard({ poi, onClose }: { poi: PoiSummary; onClose: () => void }) 
       >
         <button className="icon close" onClick={onClose} aria-label="Close"><X size={20} /></button>
         <div className="collage">
-          {poi.imageUrl ? <img src={poi.imageUrl} alt="" /> : <div className="image-fallback"><MapPin size={38} /></div>}
+          <PoiVisual poi={poi} large />
           <div className="collage-shine" />
         </div>
         <div className="detail-body">
           <span className="category">{poi.category}</span>
           <h2>{poi.name}</h2>
-          <p className="guide-text">{text || 'Researching the story of this place...'}</p>
+          {loading && !text ? (
+            <div className="guide-loading">
+              <span className="image-spinner" />
+              <strong>Researching guide text...</strong>
+            </div>
+          ) : !text ? (
+            <p className="guide-text muted">{failed ? 'No guide text could be loaded right now.' : 'No guide text available yet.'}</p>
+          ) : (
+            <p className="guide-text">{text}</p>
+          )}
           {poi.sourceRefs.length > 0 && (
             <details>
               <summary>Sources</summary>
@@ -431,31 +484,35 @@ function MainExperience() {
     setLoading(true)
     setStatus('Scanning the nearby map...')
     try {
+      setPois([])
+      setActivePoi(undefined)
       const candidates = await getCandidates(selectedGeo.latitude, selectedGeo.longitude)
       setStatus(`Found ${candidates.length} named map objects. Asking AI to curate...`)
       const selected = await selectPois(candidates, language)
-      setPois(selected)
-      setActivePoi(selected[0])
       unlockAchievement({ id: 'first-discovery', title: 'First scan', description: 'Discovered your first nearby POIs.', unlockedAt: Date.now() })
-      setImageLoadingIds(new Set(selected.map((poi) => poi.id)))
-      setStatus('Loading POI images and quick guide notes...')
-      selected.forEach((poi) => {
-        enrichPoi(poi, language)
-          .then((enriched) => {
-            setPois(useAppStore.getState().pois.map((current) => current.id === enriched.id ? enriched : current))
-            if (useAppStore.getState().activePoi?.id === enriched.id) {
-              setActivePoi(enriched)
-            }
-            setDetailPoi((current) => current?.id === enriched.id ? enriched : current)
+      setStatus(`Curated ${selected.length} nearby POIs. Loading cards...`)
+      for (const poi of selected) {
+        setPois([...useAppStore.getState().pois, poi])
+        if (!useAppStore.getState().activePoi) {
+          setActivePoi(poi)
+        }
+        setImageLoadingIds((ids) => new Set(ids).add(poi.id))
+        setStatus(`Loading ${poi.name}...`)
+        try {
+          const enriched = await enrichPoi(poi, language)
+          setPois(useAppStore.getState().pois.map((current) => current.id === enriched.id ? enriched : current))
+          if (useAppStore.getState().activePoi?.id === enriched.id) {
+            setActivePoi(enriched)
+          }
+          setDetailPoi((current) => current?.id === enriched.id ? enriched : current)
+        } finally {
+          setImageLoadingIds((ids) => {
+            const next = new Set(ids)
+            next.delete(poi.id)
+            return next
           })
-          .finally(() => {
-            setImageLoadingIds((ids) => {
-              const next = new Set(ids)
-              next.delete(poi.id)
-              return next
-            })
-          })
-      })
+        }
+      }
       setStatus('Ready to explore.')
     } catch (error) {
       setStatus(error instanceof Error ? error.message : 'Scan failed')
