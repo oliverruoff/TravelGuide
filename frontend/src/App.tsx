@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from 'framer-motion'
-import { Award, Bookmark, Compass, LocateFixed, MapPin, Play, RefreshCw, Volume2, X } from 'lucide-react'
+import { Award, Bookmark, Compass, LocateFixed, MapPin, MousePointer2, Play, RefreshCw, Sparkles, Volume2, X } from 'lucide-react'
 import maplibregl from 'maplibre-gl'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { enrichPoi, getCandidates, selectPois, streamDetail } from './api'
@@ -45,7 +45,25 @@ function Onboarding() {
   )
 }
 
-function MapPanel({ geo, pois, activePoi, onSelect }: { geo: GeoFix; pois: PoiSummary[]; activePoi?: PoiSummary; onSelect: (poi: PoiSummary) => void }) {
+function MapPanel({
+  geo,
+  pois,
+  activePoi,
+  locationLabel,
+  fakeLocationMode,
+  onLocationBadgeClick,
+  onPickLocation,
+  onSelect
+}: {
+  geo: GeoFix
+  pois: PoiSummary[]
+  activePoi?: PoiSummary
+  locationLabel: string
+  fakeLocationMode: boolean
+  onLocationBadgeClick: () => void
+  onPickLocation: (geo: GeoFix) => void
+  onSelect: (poi: PoiSummary) => void
+}) {
   const mapNode = useRef<HTMLDivElement | null>(null)
   const mapRef = useRef<maplibregl.Map | null>(null)
   const markers = useRef<maplibregl.Marker[]>([])
@@ -81,8 +99,8 @@ function MapPanel({ geo, pois, activePoi, onSelect }: { geo: GeoFix; pois: PoiSu
     if (!userMarker.current) {
       const node = document.createElement('div')
       node.className = 'user-marker'
-      node.innerHTML = '<span></span>'
-      userMarker.current = new maplibregl.Marker({ element: node, anchor: 'center' }).setLngLat([geo.longitude, geo.latitude]).addTo(mapRef.current)
+      node.innerHTML = '<div class="user-pin-shape"><span></span></div>'
+      userMarker.current = new maplibregl.Marker({ element: node, anchor: 'bottom' }).setLngLat([geo.longitude, geo.latitude]).addTo(mapRef.current)
     } else {
       userMarker.current.setLngLat([geo.longitude, geo.latitude])
     }
@@ -93,42 +111,106 @@ function MapPanel({ geo, pois, activePoi, onSelect }: { geo: GeoFix; pois: PoiSu
     markers.current = []
     pois.forEach((poi) => {
       const node = document.createElement('button')
-      node.className = `marker ${activePoi?.id === poi.id ? 'active' : ''}`
-      node.textContent = poi.name.slice(0, 18)
+      node.className = `poi-pin ${activePoi?.id === poi.id ? 'active' : ''}`
+      node.title = poi.name
+      node.innerHTML = `<div class="poi-pin-shape"></div><span>${poi.name.slice(0, 18)}</span>`
       node.onclick = () => onSelect(poi)
       const marker = new maplibregl.Marker({ element: node, anchor: 'bottom' }).setLngLat([poi.lng, poi.lat]).addTo(mapRef.current!)
       markers.current.push(marker)
     })
   }, [pois, activePoi, onSelect])
 
+  useEffect(() => {
+    if (!mapRef.current) return
+    const map = mapRef.current
+    const handlePick = (event: maplibregl.MapMouseEvent) => {
+      if (!fakeLocationMode) return
+      onPickLocation({
+        latitude: event.lngLat.lat,
+        longitude: event.lngLat.lng,
+        accuracyMeters: 5,
+        timestamp: Date.now()
+      })
+    }
+    map.on('click', handlePick)
+    return () => {
+      map.off('click', handlePick)
+    }
+  }, [fakeLocationMode, onPickLocation])
+
   return (
-    <section className="map-shell">
+    <section className={`map-shell ${fakeLocationMode ? 'picking-location' : ''}`}>
       <div ref={mapNode} className="map" />
-      <div className="accuracy">
-        <LocateFixed size={13} /> {geo.accuracyMeters && geo.accuracyMeters < 1000 ? `GPS +/- ${Math.round(geo.accuracyMeters)} m` : 'Demo location'}
-      </div>
+      <button className="accuracy" onClick={onLocationBadgeClick} aria-label="Choose location mode">
+        <LocateFixed size={13} /> {locationLabel}
+      </button>
+      <AnimatePresence>
+        {fakeLocationMode && (
+          <motion.div className="pick-location-hint" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 10 }}>
+            <MousePointer2 size={15} /> Tap the map to place yourself
+          </motion.div>
+        )}
+      </AnimatePresence>
     </section>
   )
 }
 
-function PoiCard({ poi, index, active, onClick }: { poi: PoiSummary; index: number; active: boolean; onClick: () => void }) {
+function cleanOneLiner(text: string) {
+  const node = document.createElement('textarea')
+  node.innerHTML = text
+  return node.value.replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim()
+}
+
+function PoiCard({
+  poi,
+  index,
+  active,
+  imageLoading,
+  onSelect,
+  onOpen
+}: {
+  poi: PoiSummary
+  index: number
+  active: boolean
+  imageLoading?: boolean
+  onSelect: () => void
+  onOpen: () => void
+}) {
   return (
-    <motion.button
+    <motion.article
       className={`poi-card ${active ? 'active' : ''}`}
       initial={{ opacity: 0, y: 16, rotateX: -8 }}
       animate={{ opacity: 1, y: 0, rotateX: 0 }}
       transition={{ delay: index * 0.045 }}
-      onClick={onClick}
+      onClick={onSelect}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault()
+          onSelect()
+        }
+      }}
     >
       <div className="thumb">
-        {poi.imageUrl ? <img src={poi.imageUrl} alt="" /> : <MapPin size={24} />}
+        {poi.imageUrl ? <img src={poi.imageUrl} alt="" /> : imageLoading ? <span className="image-spinner" /> : <MapPin size={24} />}
       </div>
       <div className="poi-copy">
         <span>{poi.category}</span>
         <strong>{poi.name}</strong>
-        <p>{poi.oneLiner}</p>
+        <p>{cleanOneLiner(poi.oneLiner)}</p>
       </div>
-    </motion.button>
+      <button
+        className="card-detail-button"
+        onClick={(event) => {
+          event.stopPropagation()
+          onOpen()
+        }}
+        aria-label={`Open details for ${poi.name}`}
+      >
+        <Sparkles size={16} /> Guide
+      </button>
+    </motion.article>
   )
 }
 
@@ -203,22 +285,32 @@ function SavedDrawer({ onClose }: { onClose: () => void }) {
     <motion.aside className="saved-drawer" initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }}>
       <button className="icon close" onClick={onClose} aria-label="Close"><X size={20} /></button>
       <h2>Saved POIs</h2>
-      {items.length === 0 ? <p>No saved cards yet.</p> : items.map((item) => <PoiCard key={item.id} poi={item} index={0} active={false} onClick={() => undefined} />)}
+      {items.length === 0 ? <p>No saved cards yet.</p> : items.map((item) => (
+        <PoiCard key={item.id} poi={item} index={0} active={false} onSelect={() => undefined} onOpen={() => undefined} />
+      ))}
     </motion.aside>
   )
 }
 
 function MainExperience() {
   const { geo, setGeo, pois, setPois, activePoi, setActivePoi, language, savedOpen, setSavedOpen } = useAppStore()
+  const [detailPoi, setDetailPoi] = useState<PoiSummary | undefined>()
   const [status, setStatus] = useState('Finding your location...')
   const [loading, setLoading] = useState(false)
+  const [imageLoadingIds, setImageLoadingIds] = useState<Set<string>>(new Set())
+  const [locationMenuOpen, setLocationMenuOpen] = useState(false)
+  const [fakeLocationMode, setFakeLocationMode] = useState(false)
+  const [locationSource, setLocationSource] = useState<'gps' | 'demo' | 'fake'>('demo')
 
   const selectedGeo = geo ?? fallbackBerlin
 
   function requestLocation() {
+    setFakeLocationMode(false)
+    setLocationMenuOpen(false)
     setStatus('Requesting precise location...')
     if (!navigator.geolocation) {
       setGeo(fallbackBerlin)
+      setLocationSource('demo')
       setStatus('GPS unavailable. Showing Berlin demo area.')
       return
     }
@@ -230,15 +322,33 @@ function MainExperience() {
           accuracyMeters: position.coords.accuracy,
           timestamp: position.timestamp
         })
+        setLocationSource('gps')
         setStatus('Location ready.')
       },
       () => {
         setGeo(fallbackBerlin)
+        setLocationSource('demo')
         setStatus('GPS denied. Showing Berlin demo area.')
       },
       { enableHighAccuracy: true, timeout: 9000, maximumAge: 15000 }
     )
     window.setTimeout(() => navigator.geolocation.clearWatch(watchId), 30000)
+  }
+
+  function startFakeLocation() {
+    setLocationMenuOpen(false)
+    setFakeLocationMode(true)
+    setStatus('Tap anywhere on the map to set a fake location.')
+  }
+
+  function pickFakeLocation(nextGeo: GeoFix) {
+    setGeo(nextGeo)
+    setLocationSource('fake')
+    setFakeLocationMode(false)
+    setPois([])
+    setActivePoi(undefined)
+    setDetailPoi(undefined)
+    setStatus('Fake location set. Scanning nearby POIs...')
   }
 
   useEffect(() => {
@@ -254,10 +364,26 @@ function MainExperience() {
       setStatus(`Found ${candidates.length} named map objects. Asking AI to curate...`)
       const selected = await selectPois(candidates, language)
       setPois(selected)
+      setActivePoi(selected[0])
       unlockAchievement({ id: 'first-discovery', title: 'First scan', description: 'Discovered your first nearby POIs.', unlockedAt: Date.now() })
-      setStatus('Adding images and quick guide notes...')
-      const enriched = await Promise.all(selected.map((poi) => enrichPoi(poi, language)))
-      setPois(enriched)
+      setImageLoadingIds(new Set(selected.map((poi) => poi.id)))
+      setStatus('Loading POI images and quick guide notes...')
+      selected.forEach((poi) => {
+        enrichPoi(poi, language)
+          .then((enriched) => {
+            setPois(useAppStore.getState().pois.map((current) => current.id === enriched.id ? enriched : current))
+            if (useAppStore.getState().activePoi?.id === enriched.id) {
+              setActivePoi(enriched)
+            }
+          })
+          .finally(() => {
+            setImageLoadingIds((ids) => {
+              const next = new Set(ids)
+              next.delete(poi.id)
+              return next
+            })
+          })
+      })
       setStatus('Ready to explore.')
     } catch (error) {
       setStatus(error instanceof Error ? error.message : 'Scan failed')
@@ -272,17 +398,41 @@ function MainExperience() {
   }, [geo])
 
   const active = useMemo(() => activePoi ?? pois[0], [activePoi, pois])
+  const locationLabel = locationSource === 'fake'
+    ? 'Fake location'
+    : selectedGeo.accuracyMeters && selectedGeo.accuracyMeters < 1000
+      ? `GPS +/- ${Math.round(selectedGeo.accuracyMeters)} m`
+      : 'Demo location'
 
   return (
     <main className="app-shell">
-      <MapPanel geo={selectedGeo} pois={pois} activePoi={active} onSelect={setActivePoi} />
+      <MapPanel
+        geo={selectedGeo}
+        pois={pois}
+        activePoi={active}
+        locationLabel={locationLabel}
+        fakeLocationMode={fakeLocationMode}
+        onLocationBadgeClick={() => setLocationMenuOpen((open) => !open)}
+        onPickLocation={pickFakeLocation}
+        onSelect={setActivePoi}
+      />
       <section className="content-panel">
         <header className="toolbar">
           <div>
             <span>Nearby guide</span>
             <strong>{status}</strong>
           </div>
-          <button className="icon" onClick={requestLocation} aria-label="Use current location"><LocateFixed size={19} /></button>
+          <div className="location-control">
+            <button className={`icon ${fakeLocationMode ? 'active' : ''}`} onClick={() => setLocationMenuOpen((open) => !open)} aria-label="Choose location mode"><LocateFixed size={19} /></button>
+            <AnimatePresence>
+              {locationMenuOpen && (
+                <motion.div className="location-menu" initial={{ opacity: 0, y: 8, scale: 0.96 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 8, scale: 0.96 }}>
+                  <button onClick={requestLocation}><LocateFixed size={16} /> Use GPS</button>
+                  <button onClick={startFakeLocation}><MousePointer2 size={16} /> Fake location</button>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
           <button className="icon" onClick={scan} disabled={loading} aria-label="Refresh scan"><RefreshCw className={loading ? 'spin' : ''} size={19} /></button>
           <button className="icon" onClick={() => setSavedOpen(true)} aria-label="Saved POIs"><Bookmark size={19} /></button>
         </header>
@@ -294,11 +444,22 @@ function MainExperience() {
             </div>
           )}
           {pois.map((poi, index) => (
-            <PoiCard key={poi.id} poi={poi} index={index} active={active?.id === poi.id} onClick={() => setActivePoi(poi)} />
+            <PoiCard
+              key={poi.id}
+              poi={poi}
+              index={index}
+              active={active?.id === poi.id}
+              imageLoading={imageLoadingIds.has(poi.id)}
+              onSelect={() => setActivePoi(poi)}
+              onOpen={() => {
+                setActivePoi(poi)
+                setDetailPoi(poi)
+              }}
+            />
           ))}
         </div>
       </section>
-      <AnimatePresence>{activePoi && <DetailCard poi={activePoi} onClose={() => setActivePoi(undefined)} />}</AnimatePresence>
+      <AnimatePresence>{detailPoi && <DetailCard poi={detailPoi} onClose={() => setDetailPoi(undefined)} />}</AnimatePresence>
       <AnimatePresence>{savedOpen && <SavedDrawer onClose={() => setSavedOpen(false)} />}</AnimatePresence>
     </main>
   )
