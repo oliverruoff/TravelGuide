@@ -1,0 +1,310 @@
+import { AnimatePresence, motion } from 'framer-motion'
+import { Award, Bookmark, Compass, LocateFixed, MapPin, Play, RefreshCw, Volume2, X } from 'lucide-react'
+import maplibregl from 'maplibre-gl'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { enrichPoi, getCandidates, selectPois, streamDetail } from './api'
+import { db, markVisited, savePoi, unlockAchievement, type StoredPoi } from './db'
+import { useAppStore } from './store'
+import type { GeoFix, PoiSummary } from './types'
+
+const fallbackBerlin: GeoFix = { latitude: 52.520008, longitude: 13.404954, accuracyMeters: 9999, timestamp: Date.now() }
+
+function Onboarding() {
+  const { language, setLanguage, setConfigured } = useAppStore()
+  const [miniKey, setMiniKey] = useState('')
+  const [braveKey, setBraveKey] = useState('')
+
+  return (
+    <main className="onboarding">
+      <motion.section initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} className="onboarding-card">
+        <div className="brand-mark"><Compass size={28} /></div>
+        <h1>TravelGuide</h1>
+        <p>Your AI travel cards for places around you.</p>
+        <label>
+          Language
+          <select value={language} onChange={(event) => setLanguage(event.target.value)}>
+            <option value="en">English</option>
+            <option value="de">Deutsch</option>
+            <option value="es">Español</option>
+            <option value="fr">Français</option>
+          </select>
+        </label>
+        <label>
+          MiniMax API key
+          <input value={miniKey} onChange={(event) => setMiniKey(event.target.value)} type="password" placeholder="Stored on the Python backend for V1" />
+        </label>
+        <label>
+          Brave Search API key
+          <input value={braveKey} onChange={(event) => setBraveKey(event.target.value)} type="password" placeholder="Stored on the Python backend for V1" />
+        </label>
+        <button className="primary" onClick={() => setConfigured(true)}>
+          <LocateFixed size={18} /> Start exploring
+        </button>
+      </motion.section>
+    </main>
+  )
+}
+
+function MapPanel({ geo, pois, activePoi, onSelect }: { geo: GeoFix; pois: PoiSummary[]; activePoi?: PoiSummary; onSelect: (poi: PoiSummary) => void }) {
+  const mapNode = useRef<HTMLDivElement | null>(null)
+  const mapRef = useRef<maplibregl.Map | null>(null)
+  const markers = useRef<maplibregl.Marker[]>([])
+  const userMarker = useRef<maplibregl.Marker | null>(null)
+
+  useEffect(() => {
+    if (!mapNode.current || mapRef.current) return
+    mapRef.current = new maplibregl.Map({
+      container: mapNode.current,
+      style: {
+        version: 8,
+        sources: {
+          osm: {
+            type: 'raster',
+            tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
+            tileSize: 256,
+            attribution: '© OpenStreetMap contributors'
+          }
+        },
+        layers: [{ id: 'osm', type: 'raster', source: 'osm' }]
+      },
+      center: [geo.longitude, geo.latitude],
+      zoom: 16,
+      attributionControl: false
+    })
+    mapRef.current.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'bottom-right')
+    mapRef.current.on('load', () => mapRef.current?.resize())
+  }, [geo.latitude, geo.longitude])
+
+  useEffect(() => {
+    mapRef.current?.flyTo({ center: [geo.longitude, geo.latitude], zoom: 16, essential: false })
+    if (!mapRef.current) return
+    if (!userMarker.current) {
+      const node = document.createElement('div')
+      node.className = 'user-marker'
+      node.innerHTML = '<span></span>'
+      userMarker.current = new maplibregl.Marker({ element: node, anchor: 'center' }).setLngLat([geo.longitude, geo.latitude]).addTo(mapRef.current)
+    } else {
+      userMarker.current.setLngLat([geo.longitude, geo.latitude])
+    }
+  }, [geo.latitude, geo.longitude])
+
+  useEffect(() => {
+    markers.current.forEach((marker) => marker.remove())
+    markers.current = []
+    pois.forEach((poi) => {
+      const node = document.createElement('button')
+      node.className = `marker ${activePoi?.id === poi.id ? 'active' : ''}`
+      node.textContent = poi.name.slice(0, 18)
+      node.onclick = () => onSelect(poi)
+      const marker = new maplibregl.Marker({ element: node, anchor: 'bottom' }).setLngLat([poi.lng, poi.lat]).addTo(mapRef.current!)
+      markers.current.push(marker)
+    })
+  }, [pois, activePoi, onSelect])
+
+  return (
+    <section className="map-shell">
+      <div ref={mapNode} className="map" />
+      <div className="accuracy">
+        <LocateFixed size={13} /> {geo.accuracyMeters && geo.accuracyMeters < 1000 ? `GPS +/- ${Math.round(geo.accuracyMeters)} m` : 'Demo location'}
+      </div>
+    </section>
+  )
+}
+
+function PoiCard({ poi, index, active, onClick }: { poi: PoiSummary; index: number; active: boolean; onClick: () => void }) {
+  return (
+    <motion.button
+      className={`poi-card ${active ? 'active' : ''}`}
+      initial={{ opacity: 0, y: 16, rotateX: -8 }}
+      animate={{ opacity: 1, y: 0, rotateX: 0 }}
+      transition={{ delay: index * 0.045 }}
+      onClick={onClick}
+    >
+      <div className="thumb">
+        {poi.imageUrl ? <img src={poi.imageUrl} alt="" /> : <MapPin size={24} />}
+      </div>
+      <div className="poi-copy">
+        <span>{poi.category}</span>
+        <strong>{poi.name}</strong>
+        <p>{poi.oneLiner}</p>
+      </div>
+    </motion.button>
+  )
+}
+
+function DetailCard({ poi, onClose }: { poi: PoiSummary; onClose: () => void }) {
+  const { language } = useAppStore()
+  const [text, setText] = useState('')
+  const [speaking, setSpeaking] = useState(false)
+
+  useEffect(() => {
+    const controller = new AbortController()
+    setText('')
+    streamDetail(poi, language, (chunk) => setText((value) => value + chunk), controller.signal).catch(() => {
+      setText(`${poi.name} is worth a closer look. Take a moment to observe its details, surroundings, and the way it shapes the local walk.`)
+    })
+    return () => controller.abort()
+  }, [poi, language])
+
+  function speak() {
+    if (speaking) {
+      speechSynthesis.cancel()
+      setSpeaking(false)
+      return
+    }
+    const utterance = new SpeechSynthesisUtterance(text || poi.oneLiner)
+    utterance.lang = language === 'de' ? 'de-DE' : 'en-US'
+    utterance.onend = () => setSpeaking(false)
+    setSpeaking(true)
+    speechSynthesis.speak(utterance)
+  }
+
+  return (
+    <motion.div className="detail-backdrop" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+      <motion.article
+        className="detail-card"
+        initial={{ y: 160, rotateX: -24, scale: 0.86 }}
+        animate={{ y: 0, rotateX: 0, scale: 1 }}
+        exit={{ y: 120, opacity: 0, scale: 0.9 }}
+        transition={{ type: 'spring', damping: 22, stiffness: 190 }}
+      >
+        <button className="icon close" onClick={onClose} aria-label="Close"><X size={20} /></button>
+        <div className="collage">
+          {poi.imageUrl ? <img src={poi.imageUrl} alt="" /> : <div className="image-fallback"><MapPin size={38} /></div>}
+          <div className="collage-shine" />
+        </div>
+        <div className="detail-body">
+          <span className="category">{poi.category}</span>
+          <h2>{poi.name}</h2>
+          <p className="guide-text">{text || 'Researching the story of this place...'}</p>
+          {poi.sourceRefs.length > 0 && (
+            <details>
+              <summary>Sources</summary>
+              {poi.sourceRefs.slice(0, 4).map((source) => <a href={source} target="_blank" key={source}>{source}</a>)}
+            </details>
+          )}
+        </div>
+        <div className="detail-actions">
+          <button onClick={() => savePoi(poi)}><Bookmark size={18} /> Save</button>
+          <button onClick={() => markVisited(poi)}><Award size={18} /> Visited</button>
+          <button onClick={speak}><Volume2 size={18} /> {speaking ? 'Stop' : 'Listen'}</button>
+        </div>
+      </motion.article>
+    </motion.div>
+  )
+}
+
+function SavedDrawer({ onClose }: { onClose: () => void }) {
+  const [items, setItems] = useState<StoredPoi[]>([])
+  useEffect(() => {
+    db.savedPois.orderBy('savedAt').reverse().toArray().then(setItems)
+  }, [])
+  return (
+    <motion.aside className="saved-drawer" initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }}>
+      <button className="icon close" onClick={onClose} aria-label="Close"><X size={20} /></button>
+      <h2>Saved POIs</h2>
+      {items.length === 0 ? <p>No saved cards yet.</p> : items.map((item) => <PoiCard key={item.id} poi={item} index={0} active={false} onClick={() => undefined} />)}
+    </motion.aside>
+  )
+}
+
+function MainExperience() {
+  const { geo, setGeo, pois, setPois, activePoi, setActivePoi, language, savedOpen, setSavedOpen } = useAppStore()
+  const [status, setStatus] = useState('Finding your location...')
+  const [loading, setLoading] = useState(false)
+
+  const selectedGeo = geo ?? fallbackBerlin
+
+  function requestLocation() {
+    setStatus('Requesting precise location...')
+    if (!navigator.geolocation) {
+      setGeo(fallbackBerlin)
+      setStatus('GPS unavailable. Showing Berlin demo area.')
+      return
+    }
+    const watchId = navigator.geolocation.watchPosition(
+      (position) => {
+        setGeo({
+          latitude: position.coords.latitude,
+          longitude: position.coords.longitude,
+          accuracyMeters: position.coords.accuracy,
+          timestamp: position.timestamp
+        })
+        setStatus('Location ready.')
+      },
+      () => {
+        setGeo(fallbackBerlin)
+        setStatus('GPS denied. Showing Berlin demo area.')
+      },
+      { enableHighAccuracy: true, timeout: 9000, maximumAge: 15000 }
+    )
+    window.setTimeout(() => navigator.geolocation.clearWatch(watchId), 30000)
+  }
+
+  useEffect(() => {
+    requestLocation()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [setGeo])
+
+  async function scan() {
+    setLoading(true)
+    setStatus('Scanning the nearby map...')
+    try {
+      const candidates = await getCandidates(selectedGeo.latitude, selectedGeo.longitude)
+      setStatus(`Found ${candidates.length} named map objects. Asking AI to curate...`)
+      const selected = await selectPois(candidates, language)
+      setPois(selected)
+      unlockAchievement({ id: 'first-discovery', title: 'First scan', description: 'Discovered your first nearby POIs.', unlockedAt: Date.now() })
+      setStatus('Adding images and quick guide notes...')
+      const enriched = await Promise.all(selected.map((poi) => enrichPoi(poi, language)))
+      setPois(enriched)
+      setStatus('Ready to explore.')
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : 'Scan failed')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    if (geo && pois.length === 0 && !loading) scan()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [geo])
+
+  const active = useMemo(() => activePoi ?? pois[0], [activePoi, pois])
+
+  return (
+    <main className="app-shell">
+      <MapPanel geo={selectedGeo} pois={pois} activePoi={active} onSelect={setActivePoi} />
+      <section className="content-panel">
+        <header className="toolbar">
+          <div>
+            <span>Nearby guide</span>
+            <strong>{status}</strong>
+          </div>
+          <button className="icon" onClick={requestLocation} aria-label="Use current location"><LocateFixed size={19} /></button>
+          <button className="icon" onClick={scan} disabled={loading} aria-label="Refresh scan"><RefreshCw className={loading ? 'spin' : ''} size={19} /></button>
+          <button className="icon" onClick={() => setSavedOpen(true)} aria-label="Saved POIs"><Bookmark size={19} /></button>
+        </header>
+        <div className="poi-list">
+          {pois.length === 0 && (
+            <div className="empty-state">
+              <Play size={24} />
+              <p>{loading ? 'Building your first travel cards...' : 'Tap refresh to scan nearby POIs.'}</p>
+            </div>
+          )}
+          {pois.map((poi, index) => (
+            <PoiCard key={poi.id} poi={poi} index={index} active={active?.id === poi.id} onClick={() => setActivePoi(poi)} />
+          ))}
+        </div>
+      </section>
+      <AnimatePresence>{activePoi && <DetailCard poi={activePoi} onClose={() => setActivePoi(undefined)} />}</AnimatePresence>
+      <AnimatePresence>{savedOpen && <SavedDrawer onClose={() => setSavedOpen(false)} />}</AnimatePresence>
+    </main>
+  )
+}
+
+export function App() {
+  const configured = useAppStore((state) => state.configured)
+  return configured ? <MainExperience /> : <Onboarding />
+}
