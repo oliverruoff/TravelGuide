@@ -138,21 +138,47 @@ input, select {
 .poi-pin {
   border: 0;
   padding: 0;
-  width: 34px;
+  min-width: 56px;
+  max-width: 172px;
   height: 46px;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  background: #eef2f3;
+  color: #111816;
+  border-radius: 999px;
+  box-shadow: 0 10px 22px rgba(0,0,0,0.24), inset 0 1px 0 rgba(255,255,255,0.85);
+  transform: translateX(14px);
+}
+.poi-pin::before {
+  content: "";
+  position: absolute;
+  left: -16px;
+  bottom: -6px;
+  width: 34px;
+  height: 16px;
+  background: #eef2f3;
+  transform: skewX(-11deg);
+  border-radius: 0 0 0 10px;
+  z-index: -1;
+}
+.poi-pin-icon {
+  width: 38px;
+  height: 52px;
+  margin-left: -19px;
+  margin-bottom: -12px;
+  flex: 0 0 auto;
   display: grid;
   place-items: center;
-  background: transparent;
-  color: #102033;
 }
-.poi-pin svg {
-  width: 32px;
+.poi-pin-icon svg {
+  width: 38px;
   height: 44px;
   overflow: visible;
-  filter: drop-shadow(0 8px 12px rgba(0,0,0,0.28));
+  filter: drop-shadow(0 6px 8px rgba(0,0,0,0.26));
 }
 .poi-pin path {
-  fill: #267df0;
+  fill: #215fb8;
   stroke: #fff;
   stroke-width: 2.2;
 }
@@ -160,16 +186,10 @@ input, select {
   fill: #fff;
 }
 .poi-pin span {
-  position: absolute;
-  left: 25px;
-  top: -5px;
-  max-width: 130px;
-  padding: 7px 10px;
-  border-radius: 999px;
-  background: #fff7df;
-  color: #17201c;
-  box-shadow: 0 12px 24px rgba(0,0,0,0.2);
-  font-size: 11px;
+  min-width: 0;
+  padding: 0 14px 0 0;
+  color: #111816;
+  font-size: 13px;
   font-weight: 900;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -177,14 +197,17 @@ input, select {
   pointer-events: none;
 }
 .poi-pin.active {
-  filter: drop-shadow(0 0 0.55rem rgba(38,125,240,0.52));
+  background: #dbeeff;
+  box-shadow: 0 12px 26px rgba(28, 91, 177, 0.34), inset 0 0 0 2px rgba(33, 95, 184, 0.22), inset 0 1px 0 rgba(255,255,255,0.9);
   z-index: 2;
+}
+.poi-pin.active::before {
+  background: #dbeeff;
 }
 .poi-pin.active path {
   fill: #104fba;
 }
 .poi-pin.active span {
-  background: #dbeeff;
   color: #0d376f;
 }
 

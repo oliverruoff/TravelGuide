@@ -131,10 +131,12 @@ function MapPanel({
       node.className = `poi-pin ${activePoi?.id === poi.id ? 'active' : ''}`
       node.title = poi.name
       node.innerHTML = `
-        <svg viewBox="0 0 32 44" aria-hidden="true">
-          <path d="M16 42C11.2 34.3 4 27.4 4 16.4C4 9.5 9.4 4 16 4s12 5.5 12 12.4C28 27.4 20.8 34.3 16 42Z" />
-          <circle cx="16" cy="16" r="5.2" />
-        </svg>
+        <span class="poi-pin-icon">
+          <svg viewBox="0 0 32 44" aria-hidden="true">
+            <path d="M16 42C11.2 34.3 4 27.4 4 16.4C4 9.5 9.4 4 16 4s12 5.5 12 12.4C28 27.4 20.8 34.3 16 42Z" />
+            <circle cx="16" cy="16" r="5.2" />
+          </svg>
+        </span>
         <span>${poi.name.slice(0, 18)}</span>
       `
       node.onclick = () => {
