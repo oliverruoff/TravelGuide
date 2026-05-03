@@ -525,23 +525,59 @@ function DetailCard({ poi, onClose }: { poi: PoiSummary; onClose: () => void }) 
   const { language } = useAppStore()
   const dragControls = useDragControls()
   const [text, setText] = useState('')
+  const [displayedText, setDisplayedText] = useState('')
   const [loading, setLoading] = useState(true)
   const [failed, setFailed] = useState(false)
   const [speaking, setSpeaking] = useState(false)
   const [exitY, setExitY] = useState<'105%' | '-105%'>('105%')
   const draftTextRef = useRef('')
+  const displayIndexRef = useRef(0)
+  const animationIdRef = useRef<number | null>(null)
+
+  // Smooth character-by-character animation
+  useEffect(() => {
+    if (!text || displayedText.length === text.length) return
+
+    const scheduleNextChar = () => {
+      displayIndexRef.current += 1
+      setDisplayedText(text.slice(0, displayIndexRef.current))
+      
+      if (displayIndexRef.current < text.length) {
+        // Variable delay for natural typing: 20-60ms between chars, longer after punctuation
+        const nextChar = text[displayIndexRef.current]
+        const delay = ['.', '!', '?', '\n'].includes(nextChar) ? 40 : Math.random() * 40 + 20
+        animationIdRef.current = window.setTimeout(scheduleNextChar, delay)
+      }
+    }
+
+    const initialDelay = window.setTimeout(scheduleNextChar, 50)
+    return () => {
+      clearTimeout(initialDelay)
+      if (animationIdRef.current) clearTimeout(animationIdRef.current)
+    }
+  }, [text])
 
   useEffect(() => {
     const controller = new AbortController()
     draftTextRef.current = ''
     setText('')
+    setDisplayedText('')
+    displayIndexRef.current = 0
     setLoading(true)
     setFailed(false)
+    
     streamDetail(
       poi,
       language,
       (chunk) => {
         draftTextRef.current += chunk
+        // Update the full text (animation will handle display)
+        const fullText = ensureGuideStartsWithName(poi, draftTextRef.current)
+        setText(fullText)
+        // Clear loading state once we have content
+        if (fullText && loading) {
+          setLoading(false)
+        }
       },
       controller.signal
     )
@@ -553,6 +589,7 @@ function DetailCard({ poi, onClose }: { poi: PoiSummary; onClose: () => void }) 
       })
       .catch(() => {
         setText('')
+        setDisplayedText('')
         setLoading(false)
         setFailed(true)
       })
@@ -621,7 +658,15 @@ function DetailCard({ poi, onClose }: { poi: PoiSummary; onClose: () => void }) 
           ) : !text ? (
             <p className="guide-text muted">{failed ? 'No guide text could be loaded right now.' : 'No guide text available yet.'}</p>
           ) : (
-            <p className="guide-text">{text}</p>
+            <motion.p 
+              className="guide-text"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ duration: 0.3 }}
+            >
+              {displayedText}
+              {displayedText.length < text.length && <span className="typing-cursor" />}
+            </motion.p>
           )}
           {!loading && text && poi.sourceRefs.length > 0 && (
             <details>
@@ -758,7 +803,7 @@ function MainExperience() {
       }
       const existingNames = new Set(useAppStore.getState().pois.map(poiNameKey))
       const candidates = await getCandidates(scanGeo.latitude, scanGeo.longitude)
-      setStatus(`Found ${candidates.length} named map objects. Asking AI to curate...`)
+      setStatus(`Found ${candidates.length} interesting spots nearby. Researching now...`)
       const selected = uniquePoisByName(await selectPois(candidates, language))
       const incoming = selected.filter((poi) => !existingNames.has(poiNameKey(poi)))
       if (mode === 'prepend-new' && incoming.length === 0) {
