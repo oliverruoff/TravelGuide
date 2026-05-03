@@ -1,6 +1,9 @@
+from pathlib import Path
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.staticfiles import StaticFiles
 
 from .models import CandidateRequest, PoiDetailRequest, PoiEnrichRequest, PoiSelectRequest, SessionConfigRequest
 from .services import enrich_poi, fetch_overpass, select_pois, stream_detail
@@ -11,11 +14,16 @@ settings = get_settings()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[settings.frontend_origin, "http://127.0.0.1:5173"],
-    allow_credentials=True,
+    allow_origins=["*"],
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Serve frontend static files if the dist directory exists (production Docker build)
+_dist = Path(__file__).parent.parent / "frontend" / "dist"
+if _dist.exists():
+    app.mount("/assets", StaticFiles(directory=_dist / "assets"), name="assets")
 
 
 @app.get("/api/health")
@@ -52,4 +60,14 @@ async def poi_detail_stream(payload: PoiDetailRequest):
         yield "event: done\ndata: done\n\n"
 
     return StreamingResponse(events(), media_type="text/event-stream")
+
+
+# Catch-all: serve index.html for client-side routing (only in production with dist/)
+if _dist.exists():
+    @app.get("/{full_path:path}")
+    async def serve_spa(full_path: str):
+        file = _dist / full_path
+        if file.is_file():
+            return FileResponse(file)
+        return FileResponse(_dist / "index.html")
 

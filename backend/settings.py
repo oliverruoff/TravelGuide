@@ -8,7 +8,6 @@ class Settings(BaseSettings):
     brave_api_key: str = ""
     app_secret: str = "dev-local-change-me"
     minimax_model: str = "MiniMax-M2.7"
-    frontend_origin: str = "http://localhost:5173"
     minimax_base_url: str = "https://api.minimax.io"
     brave_base_url: str = "https://api.search.brave.com"
     overpass_url: str = "https://overpass-api.de/api/interpreter"
