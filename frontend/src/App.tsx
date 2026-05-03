@@ -1019,7 +1019,7 @@ function MainExperience() {
     setGeo(nextGeo)
     setLocationSource('fake')
     setFakeLocationMode(false)
-    setStatus(useAppStore.getState().pois.length === 0 ? 'Fake location set. Scanning nearby POIs...' : 'Fake location moved. Checking for new POIs...')
+    setStatus(useAppStore.getState().pois.length === 0 ? 'Teleported. Scanning nearby POIs...' : 'Teleported. Checking for new POIs...')
   }
 
   useEffect(() => {
@@ -1027,7 +1027,7 @@ function MainExperience() {
     if (savedFakeGeo) {
       setGeo(savedFakeGeo)
       setLocationSource('fake')
-      setStatus('Fake location restored.')
+      setStatus('Teleport location restored.')
       return
     }
     requestLocation()
@@ -1164,7 +1164,7 @@ function MainExperience() {
 
   const active = useMemo(() => activePoi ?? pois[0], [activePoi, pois])
   const locationLabel = locationSource === 'fake'
-    ? 'Fake location'
+    ? 'Teleport'
     : selectedGeo.accuracyMeters && selectedGeo.accuracyMeters < 1000
       ? `GPS +/- ${Math.round(selectedGeo.accuracyMeters)} m`
       : 'Demo location'
@@ -1200,7 +1200,7 @@ function MainExperience() {
               {locationMenuOpen && (
                 <motion.div className="location-menu" initial={{ opacity: 0, y: 8, scale: 0.96 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 8, scale: 0.96 }}>
                   <button onClick={requestLocation}><LocateFixed size={16} /> Use GPS</button>
-                  <button onClick={startFakeLocation}><MousePointer2 size={16} /> Fake location</button>
+                  <button onClick={startFakeLocation}><MousePointer2 size={16} /> Teleport</button>
                 </motion.div>
               )}
             </AnimatePresence>
