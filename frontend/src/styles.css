@@ -389,13 +389,20 @@ input, select {
   border-radius: 14px;
   display: grid;
   place-items: center;
-  background: var(--control-bg);
+  background: transparent;
   color: var(--control-fg);
-  box-shadow: 0 12px 22px var(--shadow);
+  box-shadow: none;
+  cursor: pointer;
+  transition: color 0.15s, opacity 0.15s;
+  opacity: 0.6;
+}
+.icon:hover {
+  opacity: 1;
 }
 .icon.active {
   background: var(--accent);
   color: #fffaf5;
+  opacity: 1;
 }
 .theme-toggle,
 .map-theme-toggle {
@@ -566,11 +573,17 @@ input, select {
   display: flex;
   align-items: center;
   gap: 5px;
-  background: var(--control-bg);
+  background: transparent;
   color: var(--control-fg);
-  box-shadow: 0 10px 18px var(--shadow);
+  box-shadow: none;
   font-size: 12px;
   font-weight: 900;
+  cursor: pointer;
+  transition: color 0.15s, opacity 0.15s;
+  opacity: 0.6;
+}
+.card-detail-button:hover {
+  opacity: 1;
 }
 
 .card-refresh-button {
@@ -1217,23 +1230,25 @@ input, select {
   gap: 6px;
   padding: 9px 12px;
   border-radius: 12px;
-  border: 1px solid var(--line);
-  background: var(--surface);
+  border: 0;
+  background: transparent;
   color: var(--ink);
   font-size: 12px;
   font-weight: 900;
   letter-spacing: 0;
   cursor: pointer;
   transition: all 0.15s ease;
+  opacity: 0.6;
 }
 .mtg-btn:hover {
-  background: var(--control-bg);
-  border-color: color-mix(in srgb, var(--control-bg) 68%, transparent);
-  color: var(--control-fg);
-  transform: translateY(-1px);
-  box-shadow: 0 4px 12px var(--shadow);
+  background: transparent;
+  border-color: transparent;
+  color: var(--ink);
+  transform: none;
+  box-shadow: none;
+  opacity: 1;
 }
-.mtg-btn:active { transform: translateY(0); }
+.mtg-btn:active { transform: scale(0.98); }
 
 /* Power / Toughness badge */
 .mtg-pt-box {
