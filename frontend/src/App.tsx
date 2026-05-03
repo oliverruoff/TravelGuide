@@ -542,7 +542,7 @@ function PoiCard({
 }) {
   return (
     <motion.article
-      className={`poi-card ${active ? 'active' : ''}`}
+      className={`poi-card ${active ? 'active' : ''} ${getCategoryColorClass(poi.category)}`}
       initial={{ opacity: 0, y: 16, rotateX: -8 }}
       animate={{ opacity: 1, y: 0, rotateX: 0 }}
       transition={{ delay: index * 0.045 }}

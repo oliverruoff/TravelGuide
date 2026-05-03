@@ -542,7 +542,19 @@ input, select {
 }
 .poi-copy span { color: var(--soft-muted); font-size: 11px; font-weight: 900; text-transform: uppercase; }
 
-/* Category colors */
+/* Category colors — subtle background tints */
+.poi-card.cat-museum      { background: color-mix(in srgb, #8B5CF6 6%, var(--card-bg)); }
+.poi-card.cat-religious   { background: color-mix(in srgb, #EC4899 6%, var(--card-bg)); }
+.poi-card.cat-monument    { background: color-mix(in srgb, #A78BFA 6%, var(--card-bg)); }
+.poi-card.cat-castle      { background: color-mix(in srgb, #F59E0B 6%, var(--card-bg)); }
+.poi-card.cat-viewpoint   { background: color-mix(in srgb, #06B6D4 6%, var(--card-bg)); }
+.poi-card.cat-dining      { background: color-mix(in srgb, #84CC16 6%, var(--card-bg)); }
+.poi-card.cat-trail       { background: color-mix(in srgb, #10B981 6%, var(--card-bg)); }
+.poi-card.cat-water       { background: color-mix(in srgb, #3B82F6 6%, var(--card-bg)); }
+.poi-card.cat-art         { background: color-mix(in srgb, #D946EF 6%, var(--card-bg)); }
+.poi-card.cat-nature      { background: color-mix(in srgb, #22C55E 6%, var(--card-bg)); }
+
+/* Category label colors (text only) */
 .poi-copy span.cat-museum      { color: #8B5CF6; }
 .poi-copy span.cat-religious   { color: #EC4899; }
 .poi-copy span.cat-monument    { color: #A78BFA; }
