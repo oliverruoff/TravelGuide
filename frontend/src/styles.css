@@ -1118,6 +1118,33 @@ input, select {
 .mtg-set-symbol.rare     { color: var(--accent-2); }
 .mtg-set-symbol.uncommon { color: var(--soft-muted); }
 
+.mtg-float-toggle {
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+  color: var(--soft-muted);
+  padding: 0;
+  flex-shrink: 0;
+}
+.mtg-float-toggle.floating {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+.mtg-float-toggle.pinned {
+  color: var(--ink);
+  border-color: var(--line);
+}
+.mtg-float-toggle:hover {
+  background: var(--control-bg);
+  color: var(--ink);
+}
+
 /* ── Text box ── */
 .mtg-textbox {
   flex: 1 1 auto;

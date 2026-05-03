@@ -1,5 +1,5 @@
 import { AnimatePresence, motion, useDragControls } from 'framer-motion'
-import { Award, Bookmark, Compass, LocateFixed, MapPin, Moon, MousePointer2, Play, RefreshCw, Settings, Sparkles, Sun, Volume2, X } from 'lucide-react'
+import { Award, Bookmark, Compass, LocateFixed, MapPin, Moon, MousePointer2, Pin, PinOff, Play, RefreshCw, Settings, Sparkles, Sun, Volume2, X } from 'lucide-react'
 import maplibregl from 'maplibre-gl'
 import { type PointerEvent, useEffect, useMemo, useRef, useState } from 'react'
 import { enrichPoi, getCandidates, getRuntimeConfig, selectPois, streamDetail } from './api'
@@ -577,7 +577,7 @@ function PoiCard({
 }
 
 function DetailCard({ poi, userGeo, onClose }: { poi: PoiSummary; userGeo?: GeoFix; onClose: () => void }) {
-  const { language } = useAppStore()
+  const { language, floatingEnabled, toggleFloating } = useAppStore()
   const dragControls = useDragControls()
   const [text, setText] = useState('')
   const [displayedText, setDisplayedText] = useState('')
@@ -740,12 +740,12 @@ function DetailCard({ poi, userGeo, onClose }: { poi: PoiSummary; userGeo?: GeoF
         {/* Outer card frame */}
         <motion.div
           className="mtg-card"
-          animate={floatSettled ? {
+          animate={!floatingEnabled ? { y: 0, rotateX: 0, rotateY: 0 } : floatSettled ? {
             y: [0, -8, -5, -9, -4, -8, 0],
             rotateX: [0, 1.5, 3, 1, 2.5, 0.5, 0],
             rotateY: [0, -2, 0.5, 2.5, -1, 1.5, 0],
           } : { y: [0, -7, 3, 0] }}
-          transition={floatSettled ? {
+          transition={!floatingEnabled ? { duration: 0.3 } : floatSettled ? {
             duration: 7,
             ease: 'easeInOut',
             repeat: Infinity,
@@ -786,9 +786,14 @@ function DetailCard({ poi, userGeo, onClose }: { poi: PoiSummary; userGeo?: GeoF
             {/* ── Type line ── */}
             <div className="mtg-type-line">
               <span className="mtg-type-text">Landmark — {poi.category}</span>
-              <span className={`mtg-set-symbol ${poi.confidence > 0.8 ? 'mythic' : poi.confidence > 0.6 ? 'rare' : 'uncommon'}`}>
-                {poi.confidence > 0.8 ? '✦' : poi.confidence > 0.6 ? '◆' : '◈'}
-              </span>
+              <button
+                className={`mtg-float-toggle ${floatingEnabled ? 'floating' : 'pinned'}`}
+                onClick={toggleFloating}
+                title={floatingEnabled ? 'Pin card (stop floating)' : 'Unpin card (enable floating)'}
+                aria-label={floatingEnabled ? 'Pin card' : 'Unpin card'}
+              >
+                {floatingEnabled ? <Pin size={13} /> : <PinOff size={13} />}
+              </button>
             </div>
 
             {/* ── Text box (parchment) ── */}
