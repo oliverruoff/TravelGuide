@@ -554,18 +554,6 @@ input, select {
 .poi-card.cat-art         { background: color-mix(in srgb, #D946EF 6%, var(--card-bg)); }
 .poi-card.cat-nature      { background: color-mix(in srgb, #22C55E 6%, var(--card-bg)); }
 
-/* Category label colors (text only) */
-.poi-copy span.cat-museum      { color: #8B5CF6; }
-.poi-copy span.cat-religious   { color: #EC4899; }
-.poi-copy span.cat-monument    { color: #A78BFA; }
-.poi-copy span.cat-castle      { color: #F59E0B; }
-.poi-copy span.cat-viewpoint   { color: #06B6D4; }
-.poi-copy span.cat-dining      { color: #84CC16; }
-.poi-copy span.cat-trail       { color: #10B981; }
-.poi-copy span.cat-water       { color: #3B82F6; }
-.poi-copy span.cat-art         { color: #D946EF; }
-.poi-copy span.cat-nature      { color: #22C55E; }
-.poi-copy span.cat-default     { color: var(--soft-muted); }
 .poi-copy strong {
   display: block;
   margin: 3px 0;

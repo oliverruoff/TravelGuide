@@ -560,7 +560,7 @@ function PoiCard({
         <PoiVisual poi={poi} loading={imageLoading} />
       </div>
       <div className="poi-copy">
-        <span className={getCategoryColorClass(poi.category)}>{poi.category}</span>
+        <span>{poi.category}</span>
         <strong>{poi.name}</strong>
         <p>{cleanOneLiner(poi.oneLiner)}</p>
       </div>
