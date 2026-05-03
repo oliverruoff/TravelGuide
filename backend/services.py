@@ -1,4 +1,5 @@
 import json
+import logging
 import math
 import re
 from urllib.parse import quote
@@ -11,6 +12,9 @@ import httpx
 
 from .models import PoiSummary, RawGeoCandidate
 from .settings import Settings
+
+
+logger = logging.getLogger(__name__)
 
 
 PROMPTS_DIR = Path(__file__).resolve().parents[1] / "prompts"
@@ -705,28 +709,23 @@ async def detail_text_completion(settings: Settings, poi: PoiSummary, sources: l
 
 
 def _strip_reasoning(text: str) -> str:
-    """Remove <think>...</think> reasoning blocks that some models prepend."""
-    stripped = re.sub(r"<think>[\s\S]*?</think>", "", text, flags=re.IGNORECASE).strip()
+    """Remove <think>...</think> and <reasoning>...</reasoning> blocks that some models prepend."""
+    stripped = re.sub(r"<think>[\s\S]*?</think>", "", text, flags=re.IGNORECASE)
+    stripped = re.sub(r"<reasoning>[\s\S]*?</reasoning>", "", stripped, flags=re.IGNORECASE)
+    stripped = stripped.strip()
     return stripped if stripped else text.strip()
 
 
-def guide_has_clean_opening(text: str, poi: PoiSummary) -> bool:
-    trimmed = _strip_reasoning(text).lstrip(" \n\t\"'""''")
-    if not trimmed:
-        return False
-    if not trimmed.casefold().startswith(poi.name.casefold()):
-        return False
-    after_name = trimmed[len(poi.name):].lstrip()
-    return not after_name.startswith((",", ";", ":", ")", "]", "}", "–", "-", "—"))
-
-
 async def complete_detail_text(settings: Settings, poi: PoiSummary, sources: list[dict[str, Any]], language: str) -> str:
-    try:
-        text = await detail_text_completion(settings, poi, sources, language)
-        if guide_has_clean_opening(text, poi):
-            return text
-    except Exception:
-        pass
+    for attempt in range(2):
+        try:
+            text = await detail_text_completion(settings, poi, sources, language)
+            if text and text.strip():
+                return text
+        except Exception as exc:
+            logger.warning(f"detail_text_completion attempt {attempt + 1} failed for POI {poi.id}: {exc}")
+    
+    logger.error(f"All detail attempts failed for POI {poi.id}, using fallback")
     return safe_detail_fallback(poi, sources, language)
 
 
