@@ -514,7 +514,8 @@ function PoiCard({
   active,
   imageLoading,
   onSelect,
-  onOpen
+  onOpen,
+  onRefresh
 }: {
   poi: PoiSummary
   index: number
@@ -522,6 +523,7 @@ function PoiCard({
   imageLoading?: boolean
   onSelect: () => void
   onOpen: () => void
+  onRefresh?: () => void
 }) {
   return (
     <motion.article
@@ -557,6 +559,19 @@ function PoiCard({
       >
         <Sparkles size={16} /> Guide
       </button>
+      {onRefresh && (
+        <button
+          className="card-refresh-button"
+          onClick={(event) => {
+            event.stopPropagation()
+            onRefresh()
+          }}
+          aria-label={`Refresh ${poi.name}`}
+          title="Re-research this POI"
+        >
+          <RefreshCw size={11} />
+        </button>
+      )}
     </motion.article>
   )
 }
@@ -1098,6 +1113,33 @@ function MainExperience() {
     }
   }
 
+  async function refreshPoi(poi: PoiSummary) {
+    // Clear cached detail text and cached scan entry so both reload fresh
+    await clearCachedScan(selectedGeo.latitude, selectedGeo.longitude)
+    await putCachedDetail(poi.id, language, '')  // overwrite with empty so DetailCard won't serve stale text
+    // Also clear from savedPois detailText if bookmarked
+    const saved = await db.savedPois.get(poi.id)
+    if (saved) await updatePoiDetailText(poi.id, '')
+    // If this POI is open in the detail card, close it so it reloads fresh when reopened
+    setDetailPoi((current) => current?.id === poi.id ? undefined : current)
+    // Re-enrich the POI (new image + oneLiner)
+    setImageLoadingIds((ids) => new Set(ids).add(poi.id))
+    try {
+      const enriched = await enrichPoi(poi, language)
+      setPois(useAppStore.getState().pois.map((p) => p.id === enriched.id ? enriched : p))
+      if (useAppStore.getState().activePoi?.id === enriched.id) setActivePoi(enriched)
+      // Write updated scan cache with the refreshed POI
+      const updatedPois = useAppStore.getState().pois
+      await putCachedScan(selectedGeo.latitude, selectedGeo.longitude, updatedPois)
+    } finally {
+      setImageLoadingIds((ids) => {
+        const next = new Set(ids)
+        next.delete(poi.id)
+        return next
+      })
+    }
+  }
+
   useEffect(() => {
     if (geo && pois.length === 0 && !loading) scan('replace', geo)
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1190,6 +1232,7 @@ function MainExperience() {
                 setActivePoi(poi)
                 setDetailPoi(poi)
               }}
+              onRefresh={() => refreshPoi(poi)}
             />
           ))}
         </div>

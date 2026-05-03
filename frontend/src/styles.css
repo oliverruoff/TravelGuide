@@ -560,6 +560,31 @@ input, select {
   font-weight: 900;
 }
 
+.card-refresh-button {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  border: 0;
+  border-radius: 999px;
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  background: transparent;
+  color: var(--soft-muted);
+  opacity: 0;
+  transition: opacity 0.15s, color 0.15s, background 0.15s;
+  padding: 0;
+}
+.poi-card:hover .card-refresh-button,
+.poi-card:focus-within .card-refresh-button {
+  opacity: 1;
+}
+.card-refresh-button:hover {
+  background: var(--control-bg);
+  color: var(--ink);
+}
+
 .empty-state {
   min-height: 180px;
   display: grid;
