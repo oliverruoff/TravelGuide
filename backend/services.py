@@ -200,7 +200,7 @@ def _extract_json_array(text: str) -> list[dict[str, Any]]:
 async def minimax_chat(settings: Settings, messages: list[dict[str, str]], stream: bool = False) -> Any:
     if not settings.minimax_api_key:
         raise RuntimeError("MiniMax API key is missing")
-    payload = {"model": settings.minimax_model, "messages": messages, "temperature": 0.25, "stream": stream, "reasoning_split": True}
+    payload = {"model": settings.minimax_model, "messages": messages, "temperature": 0.25, "stream": stream}
     headers = {"Authorization": f"Bearer {settings.minimax_api_key}", "Content-Type": "application/json"}
     async with httpx.AsyncClient(timeout=None if stream else 45) as client:
         response = await client.post(f"{settings.minimax_base_url}/v1/chat/completions", json=payload, headers=headers)
@@ -379,27 +379,34 @@ def _strip_markup(text: str) -> str:
     return re.sub(r"\s+", " ", re.sub(r"<[^>]+>", "", text)).strip()
 
 
-def _detail_queries(poi: PoiSummary) -> list[str]:
+def _detail_queries(poi: PoiSummary, language: str = "en") -> list[str]:
     name = poi.name.strip()
     compact_name = " ".join(token for token in re.split(r"\s+", name) if token)
-    queries = [
-        f'"{compact_name}"',
-        f'"{compact_name}" Geschichte',
-        f'"{compact_name}" Sehenswürdigkeit',
-    ]
-    if "jagstradweg" in name.lower() or "radweg" in name.lower():
-        queries.extend([
-            f'"{compact_name}" Kocher Jagst Radweg',
-            '"Kocher-Jagst-Radweg" Landwirtschaft',
-        ])
-    if "kocher" in name.lower():
-        queries.append(f'"{compact_name}" Neuenstadt Hardthausen Gochsen')
+    if language.startswith("de"):
+        queries = [
+            f'"{compact_name}"',
+            f'"{compact_name}" Geschichte',
+            f'"{compact_name}" Sehenswürdigkeit',
+        ]
+        if "jagstradweg" in name.lower() or "radweg" in name.lower():
+            queries.extend([
+                f'"{compact_name}" Kocher Jagst Radweg',
+                '"Kocher-Jagst-Radweg" Landwirtschaft',
+            ])
+        if "kocher" in name.lower():
+            queries.append(f'"{compact_name}" Neuenstadt Hardthausen Gochsen')
+    else:
+        queries = [
+            f'"{compact_name}"',
+            f'"{compact_name}" history',
+            f'"{compact_name}" attraction visit',
+        ]
     return queries
 
 
-async def detail_sources(settings: Settings, poi: PoiSummary) -> list[dict[str, Any]]:
+async def detail_sources(settings: Settings, poi: PoiSummary, language: str = "en") -> list[dict[str, Any]]:
     collected: list[dict[str, Any]] = []
-    for query in _detail_queries(poi):
+    for query in _detail_queries(poi, language):
         try:
             web = await brave_search(settings, query)
         except Exception:
@@ -694,11 +701,17 @@ async def detail_text_completion(settings: Settings, poi: PoiSummary, sources: l
             {"role": "user", "content": prompt},
         ],
     )
-    return response.json()["choices"][0]["message"]["content"].strip()
+    return _strip_reasoning(response.json()["choices"][0]["message"]["content"])
+
+
+def _strip_reasoning(text: str) -> str:
+    """Remove <think>...</think> reasoning blocks that some models prepend."""
+    stripped = re.sub(r"<think>[\s\S]*?</think>", "", text, flags=re.IGNORECASE).strip()
+    return stripped if stripped else text.strip()
 
 
 def guide_has_clean_opening(text: str, poi: PoiSummary) -> bool:
-    trimmed = text.lstrip(" \n\t\"'“”‘’")
+    trimmed = _strip_reasoning(text).lstrip(" \n\t\"'""''")
     if not trimmed:
         return False
     if not trimmed.casefold().startswith(poi.name.casefold()):
@@ -718,7 +731,7 @@ async def complete_detail_text(settings: Settings, poi: PoiSummary, sources: lis
 
 
 async def stream_detail(settings: Settings, poi: PoiSummary, language: str) -> AsyncIterator[str]:
-    sources = await detail_sources(settings, poi)
+    sources = await detail_sources(settings, poi, language)
     contextual = contextual_route_guide(poi, sources, language)
     if contextual:
         for word in contextual.split(" "):
