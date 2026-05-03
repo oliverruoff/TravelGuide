@@ -148,6 +148,22 @@ input, select {
 }
 
 .map { position: absolute; inset: 0; }
+
+/* MapLibre GL Controls */
+.maplibregl-ctrl-group button {
+  background: #ffffff !important;
+  border: none !important;
+}
+.maplibregl-ctrl-group button svg {
+  filter: invert(1);
+}
+.app-shell.dark .maplibregl-ctrl-group button {
+  background: #1d1a18 !important;
+}
+.app-shell.dark .maplibregl-ctrl-group button svg {
+  filter: none;
+}
+
 .search-radius-gradient {
   position: absolute;
   left: 0;
