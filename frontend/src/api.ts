@@ -1,4 +1,7 @@
+/// <reference types="vite/client" />
 import type { PoiSummary, RawGeoCandidate } from './types'
+
+const API_BASE = import.meta.env.BASE_URL.replace(/\/$/, '')
 
 export type RuntimeConfig = {
   configured: boolean
@@ -6,13 +9,13 @@ export type RuntimeConfig = {
 }
 
 export async function getRuntimeConfig(): Promise<RuntimeConfig> {
-  const response = await fetch('/api/config/runtime')
+  const response = await fetch(`${API_BASE}/api/config/runtime`)
   if (!response.ok) throw new Error('Could not load runtime config')
   return response.json()
 }
 
 export async function getCandidates(lat: number, lng: number): Promise<RawGeoCandidate[]> {
-  const response = await fetch('/api/geo/candidates', {
+  const response = await fetch(`${API_BASE}/api/geo/candidates`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ lat, lng, radiusMeters: 500 })
@@ -22,7 +25,7 @@ export async function getCandidates(lat: number, lng: number): Promise<RawGeoCan
 }
 
 export async function selectPois(candidates: RawGeoCandidate[], language: string): Promise<PoiSummary[]> {
-  const response = await fetch('/api/poi/select', {
+  const response = await fetch(`${API_BASE}/api/poi/select`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ candidates, language })
@@ -32,7 +35,7 @@ export async function selectPois(candidates: RawGeoCandidate[], language: string
 }
 
 export async function enrichPoi(poi: PoiSummary, language: string): Promise<PoiSummary> {
-  const response = await fetch('/api/poi/enrich', {
+  const response = await fetch(`${API_BASE}/api/poi/enrich`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ poi, language })
@@ -48,7 +51,7 @@ export async function streamDetail(
   signal?: AbortSignal,
   onDone?: () => void
 ) {
-  const response = await fetch('/api/poi/detail/stream', {
+  const response = await fetch(`${API_BASE}/api/poi/detail/stream`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ poi, language }),
