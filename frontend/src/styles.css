@@ -150,16 +150,30 @@ input, select {
 .map { position: absolute; inset: 0; }
 
 /* MapLibre GL Controls */
+.maplibregl-ctrl button,
 .maplibregl-ctrl-group button {
   background: #ffffff !important;
   border: none !important;
+  color: #000000 !important;
 }
+.maplibregl-ctrl button:hover,
+.maplibregl-ctrl-group button:hover {
+  background: #f0f0f0 !important;
+}
+.maplibregl-ctrl button svg,
 .maplibregl-ctrl-group button svg {
   filter: invert(1);
 }
+.app-shell.dark .maplibregl-ctrl button,
 .app-shell.dark .maplibregl-ctrl-group button {
   background: #1d1a18 !important;
+  color: #f8f3ed !important;
 }
+.app-shell.dark .maplibregl-ctrl button:hover,
+.app-shell.dark .maplibregl-ctrl-group button:hover {
+  background: #2a2521 !important;
+}
+.app-shell.dark .maplibregl-ctrl button svg,
 .app-shell.dark .maplibregl-ctrl-group button svg {
   filter: none;
 }
