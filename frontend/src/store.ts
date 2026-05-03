@@ -3,6 +3,7 @@ import type { GeoFix, PoiSummary } from './types'
 
 type AppState = {
   language: string
+  ttsProvider: 'browser' | 'minimax'
   configured: boolean
   theme: 'light' | 'dark'
   geo?: GeoFix
@@ -10,6 +11,8 @@ type AppState = {
   activePoi?: PoiSummary
   savedOpen: boolean
   setLanguage: (language: string) => void
+  setTtsProvider: (provider: 'browser' | 'minimax') => void
+  applyRuntimeConfig: (config: { configured: boolean; language: string; ttsProvider: 'browser' | 'minimax' }) => void
   setConfigured: (configured: boolean) => void
   toggleTheme: () => void
   setGeo: (geo: GeoFix) => void
@@ -20,6 +23,7 @@ type AppState = {
 
 export const useAppStore = create<AppState>((set) => ({
   language: localStorage.getItem('travelguide.language') ?? 'en',
+  ttsProvider: localStorage.getItem('travelguide.ttsProvider') === 'browser' ? 'browser' : 'minimax',
   configured: localStorage.getItem('travelguide.configured') === 'true',
   theme: (localStorage.getItem('travelguide.theme') === 'dark' ? 'dark' : 'light'),
   pois: [],
@@ -27,6 +31,18 @@ export const useAppStore = create<AppState>((set) => ({
   setLanguage: (language) => {
     localStorage.setItem('travelguide.language', language)
     set({ language })
+  },
+  setTtsProvider: (ttsProvider) => {
+    localStorage.setItem('travelguide.ttsProvider', ttsProvider)
+    set({ ttsProvider })
+  },
+  applyRuntimeConfig: ({ configured, language, ttsProvider }) => {
+    if (configured) {
+      localStorage.setItem('travelguide.language', language)
+      localStorage.setItem('travelguide.ttsProvider', ttsProvider)
+      localStorage.setItem('travelguide.configured', 'true')
+      set({ configured: true, language, ttsProvider })
+    }
   },
   setConfigured: (configured) => {
     localStorage.setItem('travelguide.configured', String(configured))

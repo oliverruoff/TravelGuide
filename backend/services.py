@@ -208,6 +208,42 @@ async def minimax_chat(settings: Settings, messages: list[dict[str, str]], strea
         return response
 
 
+async def minimax_tts(settings: Settings, text: str, language: str) -> bytes:
+    if not settings.minimax_api_key:
+        raise RuntimeError("MiniMax API key is missing")
+    payload = {
+        "model": settings.minimax_tts_model,
+        "text": re.sub(r"\s+", " ", text).strip()[:10000],
+        "stream": False,
+        "language_boost": "auto" if not language.startswith("de") else "German",
+        "output_format": "hex",
+        "voice_setting": {
+            "voice_id": settings.minimax_tts_voice_id,
+            "speed": 1,
+            "vol": 1,
+            "pitch": 0,
+        },
+        "audio_setting": {
+            "sample_rate": 32000,
+            "bitrate": 128000,
+            "format": "mp3",
+            "channel": 1,
+        },
+    }
+    headers = {"Authorization": f"Bearer {settings.minimax_api_key}", "Content-Type": "application/json"}
+    async with httpx.AsyncClient(timeout=60) as client:
+        response = await client.post(f"{settings.minimax_base_url}/v1/t2a_v2", json=payload, headers=headers)
+        response.raise_for_status()
+    data = response.json()
+    base_resp = data.get("base_resp") or {}
+    if base_resp.get("status_code") not in (0, None):
+        raise RuntimeError(str(base_resp.get("status_msg") or "MiniMax TTS failed"))
+    audio_hex = (data.get("data") or {}).get("audio")
+    if not audio_hex:
+        raise RuntimeError("MiniMax TTS returned no audio")
+    return bytes.fromhex(audio_hex)
+
+
 def heuristic_select(candidates: list[RawGeoCandidate]) -> list[PoiSummary]:
     def score(candidate: RawGeoCandidate) -> tuple[int, float]:
         return (-travel_candidate_score(candidate), candidate.distanceMeters)
@@ -607,6 +643,26 @@ async def detail_text_completion(settings: Settings, poi: PoiSummary, sources: l
     return response.json()["choices"][0]["message"]["content"].strip()
 
 
+def guide_has_clean_opening(text: str, poi: PoiSummary) -> bool:
+    trimmed = text.lstrip(" \n\t\"'“”‘’")
+    if not trimmed:
+        return False
+    if not trimmed.casefold().startswith(poi.name.casefold()):
+        return False
+    after_name = trimmed[len(poi.name):].lstrip()
+    return not after_name.startswith((",", ";", ":", ")", "]", "}", "–", "-", "—"))
+
+
+async def complete_detail_text(settings: Settings, poi: PoiSummary, sources: list[dict[str, Any]], language: str) -> str:
+    try:
+        text = await detail_text_completion(settings, poi, sources, language)
+        if guide_has_clean_opening(text, poi):
+            return text
+    except Exception:
+        pass
+    return safe_detail_fallback(poi, sources, language)
+
+
 async def stream_detail(settings: Settings, poi: PoiSummary, language: str) -> AsyncIterator[str]:
     sources = await detail_sources(settings, poi)
     contextual = contextual_route_guide(poi, sources, language)
@@ -615,74 +671,6 @@ async def stream_detail(settings: Settings, poi: PoiSummary, language: str) -> A
             yield word + " "
         return
 
-    prompt = render_prompt(
-        "detail_stream_user.txt",
-        language=language,
-        poi_name=poi.name,
-        poi_json=poi.model_dump_json(),
-        sources_json=json.dumps(sources, ensure_ascii=False),
-    )
-    headers = {"Authorization": f"Bearer {settings.minimax_api_key}", "Content-Type": "application/json"}
-    payload = {
-        "model": settings.minimax_model,
-        "messages": [
-            {"role": "system", "content": load_prompt("detail_stream_system.txt")},
-            {"role": "user", "content": prompt},
-        ],
-        "temperature": 0.45,
-        "stream": True,
-        "reasoning_split": True,
-    }
-    try:
-        in_thinking = False
-        yielded_any = False
-        async with httpx.AsyncClient(timeout=None) as client:
-            async with client.stream("POST", f"{settings.minimax_base_url}/v1/chat/completions", json=payload, headers=headers) as response:
-                response.raise_for_status()
-                async for line in response.aiter_lines():
-                    if not line.startswith("data: "):
-                        continue
-                    raw = line[6:]
-                    if raw == "[DONE]":
-                        break
-                    try:
-                        chunk = json.loads(raw)
-                        text = chunk["choices"][0].get("delta", {}).get("content")
-                        if text:
-                            visible = text
-                            while visible:
-                                if in_thinking:
-                                    end = visible.find("</think>")
-                                    if end == -1:
-                                        visible = ""
-                                    else:
-                                        visible = visible[end + len("</think>") :]
-                                        in_thinking = False
-                                else:
-                                    start = visible.find("<think>")
-                                    if start == -1:
-                                        yielded_any = True
-                                        yield visible
-                                        visible = ""
-                                    else:
-                                        if start > 0:
-                                            yielded_any = True
-                                            yield visible[:start]
-                                        visible = visible[start + len("<think>") :]
-                                        in_thinking = True
-                    except Exception:
-                        continue
-        if not yielded_any:
-            try:
-                fallback_text = await detail_text_completion(settings, poi, sources, language)
-            except Exception:
-                fallback_text = safe_detail_fallback(poi, sources, language)
-            for word in fallback_text.split(" "):
-                yield word + " "
-    except Exception:
-        try:
-            fallback_text = await detail_text_completion(settings, poi, sources, language)
-        except Exception:
-            fallback_text = safe_detail_fallback(poi, sources, language)
-        for word in fallback_text.split(" "):
-            yield word + " "
+    detail_text = await complete_detail_text(settings, poi, sources, language)
+    for word in detail_text.split(" "):
+        yield word + " "

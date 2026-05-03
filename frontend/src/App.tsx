@@ -2,7 +2,7 @@ import { AnimatePresence, motion, useDragControls } from 'framer-motion'
 import { Award, Bookmark, Compass, LocateFixed, MapPin, Moon, MousePointer2, Play, RefreshCw, Settings, Sparkles, Sun, Volume2, X } from 'lucide-react'
 import maplibregl from 'maplibre-gl'
 import { type PointerEvent, useEffect, useMemo, useRef, useState } from 'react'
-import { enrichPoi, getCandidates, selectPois, streamDetail } from './api'
+import { enrichPoi, getCandidates, getRuntimeConfig, selectPois, streamDetail, synthesizeSpeech } from './api'
 import { db, markVisited, savePoi, deletePoi, unlockAchievement, type StoredPoi } from './db'
 import { useAppStore } from './store'
 import type { GeoFix, PoiSummary } from './types'
@@ -116,6 +116,19 @@ function searchRadiusBounds(geo: GeoFix): [[number, number], [number, number]] {
   ]
 }
 
+function updateSearchRadiusOverlay(map: maplibregl.Map, geo: GeoFix, overlay: HTMLDivElement | null) {
+  if (!overlay) return
+  const center = map.project([geo.longitude, geo.latitude])
+  const lngOffset = poiSearchRadiusMeters / (111320 * Math.cos(geo.latitude * Math.PI / 180))
+  const latOffset = poiSearchRadiusMeters / 111320
+  const east = map.project([geo.longitude + lngOffset, geo.latitude])
+  const north = map.project([geo.longitude, geo.latitude + latOffset])
+  const radius = Math.max(Math.abs(east.x - center.x), Math.abs(center.y - north.y))
+  overlay.style.width = `${radius * 2}px`
+  overlay.style.height = `${radius * 2}px`
+  overlay.style.transform = `translate(${center.x - radius}px, ${center.y - radius}px)`
+}
+
 function ensureSearchRadiusLayer(map: maplibregl.Map, geo: GeoFix) {
   const existing = map.getSource('poi-search-radius') as maplibregl.GeoJSONSource | undefined
   if (existing) {
@@ -131,8 +144,8 @@ function ensureSearchRadiusLayer(map: maplibregl.Map, geo: GeoFix) {
     type: 'fill',
     source: 'poi-search-radius',
     paint: {
-      'fill-color': '#2b7fff',
-      'fill-opacity': 0.12,
+      'fill-color': '#ffffff',
+      'fill-opacity': 0,
     },
   })
   map.addLayer({
@@ -140,9 +153,9 @@ function ensureSearchRadiusLayer(map: maplibregl.Map, geo: GeoFix) {
     type: 'line',
     source: 'poi-search-radius',
     paint: {
-      'line-color': '#1f64d8',
+      'line-color': '#7facff',
       'line-width': 2,
-      'line-opacity': 0.58,
+      'line-opacity': 0.32,
     },
   })
 }
@@ -176,7 +189,7 @@ function readSavedFakeGeo(): GeoFix | undefined {
 }
 
 function Onboarding() {
-  const { language, setLanguage, setConfigured } = useAppStore()
+  const { language, ttsProvider, setLanguage, setTtsProvider, setConfigured } = useAppStore()
   const [miniKey, setMiniKey] = useState('')
   const [braveKey, setBraveKey] = useState('')
 
@@ -193,6 +206,13 @@ function Onboarding() {
             <option value="de">Deutsch</option>
             <option value="es">Español</option>
             <option value="fr">Français</option>
+          </select>
+        </label>
+        <label>
+          Text to Speech
+          <select value={ttsProvider} onChange={(event) => setTtsProvider(event.target.value === 'minimax' ? 'minimax' : 'browser')}>
+            <option value="browser">Browser voice</option>
+            <option value="minimax">MiniMax voice clone</option>
           </select>
         </label>
         <label>
@@ -237,6 +257,7 @@ function MapPanel({
   onOpenPoi: (poi: PoiSummary) => void
 }) {
   const mapNode = useRef<HTMLDivElement | null>(null)
+  const radiusOverlayNode = useRef<HTMLDivElement | null>(null)
   const mapRef = useRef<maplibregl.Map | null>(null)
   const markers = useRef<maplibregl.Marker[]>([])
   const markerNodes = useRef<Map<string, HTMLButtonElement>>(new Map())
@@ -268,6 +289,7 @@ function MapPanel({
       if (!map) return
       map.resize()
       ensureSearchRadiusLayer(map, geo)
+      updateSearchRadiusOverlay(map, geo, radiusOverlayNode.current)
       fitSearchRadius(map, geo, 0)
     })
   }, [geo.latitude, geo.longitude, theme])
@@ -278,6 +300,7 @@ function MapPanel({
     map.setStyle(rasterMapStyle(theme))
     map.once('style.load', () => {
       ensureSearchRadiusLayer(map, geo)
+      updateSearchRadiusOverlay(map, geo, radiusOverlayNode.current)
       fitSearchRadius(map, geo, 0)
     })
     // The basemap style should only be swapped for light/dark mode.
@@ -290,6 +313,7 @@ function MapPanel({
     const map = mapRef.current
     const updateRadius = () => {
       ensureSearchRadiusLayer(map, geo)
+      updateSearchRadiusOverlay(map, geo, radiusOverlayNode.current)
       fitSearchRadius(map, geo)
     }
     if (map.loaded()) {
@@ -309,6 +333,21 @@ function MapPanel({
       userMarker.current = new maplibregl.Marker({ element: node, anchor: 'bottom' }).setLngLat([geo.longitude, geo.latitude]).addTo(mapRef.current)
     } else {
       userMarker.current.setLngLat([geo.longitude, geo.latitude])
+    }
+  }, [geo.latitude, geo.longitude])
+
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map) return
+    const updateOverlay = () => updateSearchRadiusOverlay(map, geo, radiusOverlayNode.current)
+    updateOverlay()
+    map.on('move', updateOverlay)
+    map.on('zoom', updateOverlay)
+    map.on('resize', updateOverlay)
+    return () => {
+      map.off('move', updateOverlay)
+      map.off('zoom', updateOverlay)
+      map.off('resize', updateOverlay)
     }
   }, [geo.latitude, geo.longitude])
 
@@ -404,6 +443,7 @@ function MapPanel({
   return (
     <section className={`map-shell ${fakeLocationMode ? 'picking-location' : ''}`}>
       <div ref={mapNode} className="map" />
+      <div ref={radiusOverlayNode} className="search-radius-gradient" aria-hidden="true" />
       <button className="icon map-theme-toggle" onClick={onToggleTheme} aria-label="Toggle color theme">
         {theme === 'light' ? <Moon size={18} /> : <Sun size={18} />}
       </button>
@@ -458,7 +498,7 @@ function fallbackImageForPoi(poi: PoiSummary) {
 function ensureGuideStartsWithName(poi: PoiSummary, text: string) {
   const trimmed = text.trim()
   if (!trimmed) return ''
-  return trimmed.toLowerCase().startsWith(poi.name.toLowerCase()) ? trimmed : `${poi.name}: ${trimmed}`
+  return trimmed
 }
 
 function PoiVisual({ poi, loading, large = false }: { poi: PoiSummary; loading?: boolean; large?: boolean }) {
@@ -529,18 +569,29 @@ function PoiCard({
 }
 
 function DetailCard({ poi, userGeo, onClose }: { poi: PoiSummary; userGeo?: GeoFix; onClose: () => void }) {
-  const { language } = useAppStore()
+  const { language, ttsProvider } = useAppStore()
   const dragControls = useDragControls()
   const [text, setText] = useState('')
   const [displayedText, setDisplayedText] = useState('')
   const [loading, setLoading] = useState(true)
   const [failed, setFailed] = useState(false)
   const [speaking, setSpeaking] = useState(false)
+  const [audioLoading, setAudioLoading] = useState(false)
+  const [audioError, setAudioError] = useState('')
+  const [floatSettled, setFloatSettled] = useState(false)
   const [exitY, setExitY] = useState<'105%' | '-105%'>('105%')
   const [saveAnimationKey, setSaveAnimationKey] = useState<string | null>(null)
   const draftTextRef = useRef('')
   const displayIndexRef = useRef(0)
   const animationIdRef = useRef<number | null>(null)
+  const audioRef = useRef<HTMLAudioElement | null>(null)
+  const audioUrlRef = useRef<string | null>(null)
+
+  useEffect(() => {
+    setFloatSettled(false)
+    const settleTimer = window.setTimeout(() => setFloatSettled(true), 1000)
+    return () => clearTimeout(settleTimer)
+  }, [poi.id])
 
   // Smooth character-by-character animation
   useEffect(() => {
@@ -573,6 +624,7 @@ function DetailCard({ poi, userGeo, onClose }: { poi: PoiSummary; userGeo?: GeoF
     displayIndexRef.current = 0
     setLoading(true)
     setFailed(false)
+    setAudioError('')
     
     streamDetail(
       poi,
@@ -601,20 +653,66 @@ function DetailCard({ poi, userGeo, onClose }: { poi: PoiSummary; userGeo?: GeoF
         setLoading(false)
         setFailed(true)
       })
-    return () => controller.abort()
+    return () => {
+      controller.abort()
+      speechSynthesis.cancel()
+      audioRef.current?.pause()
+      if (audioUrlRef.current) URL.revokeObjectURL(audioUrlRef.current)
+      audioRef.current = null
+      audioUrlRef.current = null
+      setSpeaking(false)
+      setAudioLoading(false)
+      setAudioError('')
+    }
   }, [poi, language])
 
-  function speak() {
-    if (speaking) {
-      speechSynthesis.cancel()
-      setSpeaking(false)
-      return
-    }
-    const utterance = new SpeechSynthesisUtterance(text || poi.oneLiner)
+  function playBrowserSpeech(speechText: string) {
+    const utterance = new SpeechSynthesisUtterance(speechText)
     utterance.lang = language === 'de' ? 'de-DE' : 'en-US'
     utterance.onend = () => setSpeaking(false)
+    utterance.onerror = () => setSpeaking(false)
     setSpeaking(true)
     speechSynthesis.speak(utterance)
+  }
+
+  async function speak() {
+    if (speaking || audioLoading) {
+      speechSynthesis.cancel()
+      audioRef.current?.pause()
+      setSpeaking(false)
+      setAudioLoading(false)
+      return
+    }
+    const speechText = text || poi.oneLiner
+    if (!speechText.trim()) return
+    setAudioError('')
+    if (ttsProvider === 'minimax') {
+      setAudioLoading(true)
+      try {
+        if (audioUrlRef.current) URL.revokeObjectURL(audioUrlRef.current)
+        const audioBlob = await synthesizeSpeech(speechText, language)
+        const audioUrl = URL.createObjectURL(audioBlob)
+        audioUrlRef.current = audioUrl
+        const audio = new Audio(audioUrl)
+        audioRef.current = audio
+        audio.onplay = () => {
+          setAudioLoading(false)
+          setSpeaking(true)
+        }
+        audio.onended = () => setSpeaking(false)
+        audio.onerror = () => {
+          setAudioLoading(false)
+          setSpeaking(false)
+        }
+        await audio.play()
+      } catch (error) {
+        setAudioLoading(false)
+        setSpeaking(false)
+        setAudioError(error instanceof Error ? `MiniMax: ${error.message}` : 'MiniMax audio unavailable')
+      }
+      return
+    }
+    playBrowserSpeech(speechText)
   }
 
   function closeWithDirection(direction: 'up' | 'down' = 'down') {
@@ -650,7 +748,11 @@ function DetailCard({ poi, userGeo, onClose }: { poi: PoiSummary; userGeo?: GeoF
         }}
       >
         {/* Outer card frame */}
-        <div className="mtg-card">
+        <motion.div
+          className="mtg-card"
+          animate={{ y: floatSettled ? 0 : [0, -7, 3, 0] }}
+          transition={{ duration: 1, ease: 'easeInOut', times: [0, 0.35, 0.72, 1] }}
+        >
 
           {/* Close button — floats above the card */}
           <button className="mtg-close" onClick={() => closeWithDirection('down')} aria-label="Close"><X size={18} /></button>
@@ -718,13 +820,14 @@ function DetailCard({ poi, userGeo, onClose }: { poi: PoiSummary; userGeo?: GeoF
                   ))}
                 </details>
               )}
+              {audioError && <p className="mtg-audio-error">{audioError}</p>}
             </div>
 
             {/* ── Bottom bar: actions + P/T box ── */}
             <div className="mtg-bottom-bar">
               <div className="mtg-actions">
-                <button className="mtg-btn save" onClick={handleSave}><Bookmark size={15} /> Save</button>
-                <button className="mtg-btn listen" onClick={speak}><Volume2 size={15} /> {speaking ? 'Stop' : 'Listen'}</button>
+                <button className="mtg-btn save" onClick={handleSave}><Bookmark size={15} /> Collect</button>
+                <button className="mtg-btn listen" onClick={speak}><Volume2 size={15} /> {speaking ? 'Stop' : audioLoading ? 'Loading' : 'Audio'}</button>
               </div>
               <div className="mtg-pt-box" title="Confidence score">
                 {Math.round(poi.confidence * 100)}<span>/100</span>
@@ -732,7 +835,7 @@ function DetailCard({ poi, userGeo, onClose }: { poi: PoiSummary; userGeo?: GeoF
             </div>
 
           </div>{/* end .mtg-frame */}
-        </div>{/* end .mtg-card */}
+        </motion.div>{/* end .mtg-card */}
       </motion.div>
 
       {/* Save animation */}
@@ -929,7 +1032,7 @@ function MainExperience() {
 
   async function scan(mode: 'replace' | 'prepend-new' = 'replace', scanGeo: GeoFix = selectedGeo) {
     setLoading(true)
-    setStatus(mode === 'replace' ? 'Scanning the nearby map...' : 'Checking for new nearby POIs...')
+    setStatus(mode === 'replace' ? 'Scanning...' : 'Checking nearby...')
     try {
       if (mode === 'replace') {
         setPois([])
@@ -937,18 +1040,18 @@ function MainExperience() {
       }
       const existingNames = new Set(useAppStore.getState().pois.map(poiNameKey))
       const candidates = await getCandidates(scanGeo.latitude, scanGeo.longitude)
-      setStatus(`Found ${candidates.length} interesting spots nearby. Researching now...`)
+      setStatus(`Researching ${candidates.length} spots...`)
       const selected = uniquePoisByName(await selectPois(candidates, language))
       const incoming = selected.filter((poi) => !existingNames.has(poiNameKey(poi)))
       if (mode === 'prepend-new' && incoming.length === 0) {
-        setStatus('No new POIs nearby yet.')
+        setStatus('No new spots yet.')
         lastScanGeoRef.current = scanGeo
         return
       }
       unlockAchievement({ id: 'first-discovery', title: 'First scan', description: 'Discovered your first nearby POIs.', unlockedAt: Date.now() })
       const poisToLoad = mode === 'replace' ? selected : incoming
       const loadedIncoming: PoiSummary[] = []
-      setStatus(mode === 'replace' ? `Curated ${poisToLoad.length} nearby POIs. Loading cards...` : `Found ${poisToLoad.length} new POIs. Loading them...`)
+      setStatus(mode === 'replace' ? `Loading ${poisToLoad.length} cards...` : `Loading ${poisToLoad.length} new cards...`)
       for (const poi of poisToLoad) {
         if (mode === 'replace') {
           setPois([...useAppStore.getState().pois, poi])
@@ -981,7 +1084,7 @@ function MainExperience() {
         }
       }
       lastScanGeoRef.current = scanGeo
-      setStatus('Ready to explore.')
+      setStatus('Ready.')
     } catch (error) {
       setStatus(error instanceof Error ? error.message : 'Scan failed')
     } finally {
@@ -1034,7 +1137,7 @@ function MainExperience() {
       <section className="content-panel">
         <header className="toolbar">
           <div>
-            <span>Nearby guide</span>
+            <span>Nearby</span>
             <strong>{status}</strong>
           </div>
           <button className="icon" onClick={() => setConfigured(false)} aria-label="Open settings"><Settings size={19} /></button>
@@ -1093,5 +1196,16 @@ function MainExperience() {
 
 export function App() {
   const configured = useAppStore((state) => state.configured)
+  const applyRuntimeConfig = useAppStore((state) => state.applyRuntimeConfig)
+  const [runtimeReady, setRuntimeReady] = useState(false)
+
+  useEffect(() => {
+    getRuntimeConfig()
+      .then(applyRuntimeConfig)
+      .catch(() => undefined)
+      .finally(() => setRuntimeReady(true))
+  }, [applyRuntimeConfig])
+
+  if (!runtimeReady) return null
   return configured ? <MainExperience /> : <Onboarding />
 }

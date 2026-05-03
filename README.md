@@ -76,16 +76,25 @@ TravelGuide/
 
 ### Environment Variables
 
-Create a `.env` file in the project root with your API keys:
+Copy `.env_sample` to `.env` in the project root and fill in your settings:
 
 ```bash
-# Required for AI functionality
+cp .env_sample .env
+```
+
+The `.env` file is gitignored. It can configure both backend credentials and the initial app settings screen values:
+
+```bash
+TRAVELGUIDE_LANGUAGE=en
+TRAVELGUIDE_TTS_PROVIDER=browser # browser or minimax
 MINIMAX_API_KEY=your_minimax_key
 BRAVE_API_KEY=your_brave_api_key
 
 # Optional: other configs
 LOG_LEVEL=info
 ```
+
+When `MINIMAX_API_KEY` and `BRAVE_API_KEY` are provided through the environment, the app treats deployment config as complete and opens directly to the map experience instead of the settings screen. The browser receives only non-secret runtime config such as language and TTS mode; API keys stay on the backend.
 
 ## Deployment
 
@@ -120,7 +129,23 @@ docker run -p 8000:8000 \
   travelguide:latest
 ```
 
-### Option 3: GitHub Container Registry (GHCR)
+### Option 3: Runtime Env File Configuration
+
+For hosted deployments, provide the variables from `.env_sample` as an env file or platform environment variables. This lets you deploy the same Docker image with different defaults:
+
+```bash
+docker run -p 8000:8000 --env-file .env travelguide:latest
+```
+
+Supported app settings:
+- `TRAVELGUIDE_LANGUAGE`: `en`, `de`, `es`, or `fr`
+- `TRAVELGUIDE_TTS_PROVIDER`: `browser` or `minimax`
+- `MINIMAX_API_KEY`: MiniMax API key used by the backend
+- `BRAVE_API_KEY`: Brave Search API key used by the backend
+- `MINIMAX_TTS_MODEL`: MiniMax TTS model, for example `speech-2.8-hd`
+- `MINIMAX_TTS_VOICE_ID`: MiniMax voice id for TTS, including cloned voices your MiniMax account can access
+
+### Option 4: GitHub Container Registry (GHCR)
 
 This project includes GitHub Actions CI/CD that automatically builds and pushes Docker images to GHCR on every push to the `main` branch.
 
@@ -137,7 +162,7 @@ docker run -p 8000:8000 \
 2. GitHub Actions will build and push on every `main` branch push
 3. Images are tagged as `ghcr.io/oliverruoff/travelguide:latest`
 
-### Option 4: Local Development
+### Option 5: Local Development
 
 **Setup frontend:**
 

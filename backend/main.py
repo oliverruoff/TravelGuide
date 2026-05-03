@@ -3,11 +3,11 @@ from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
-from .models import CandidateRequest, PoiDetailRequest, PoiEnrichRequest, PoiSelectRequest, SessionConfigRequest
-from .services import enrich_poi, fetch_overpass, select_pois, stream_detail
+from .models import CandidateRequest, PoiDetailRequest, PoiEnrichRequest, PoiSelectRequest, SessionConfigRequest, TtsRequest
+from .services import enrich_poi, fetch_overpass, minimax_tts, select_pois, stream_detail
 from .settings import get_settings
 
 logger = logging.getLogger(__name__)
@@ -32,6 +32,18 @@ if _dist.exists():
 @app.get("/api/health")
 async def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.get("/api/config/runtime")
+async def runtime_config() -> dict[str, str | bool]:
+    tts_provider_value = settings.travelguide_tts_provider.strip().lower()
+    tts_provider = tts_provider_value if tts_provider_value in {"browser", "minimax"} else "browser"
+    deployment_configured = bool(settings.minimax_api_key and settings.brave_api_key)
+    return {
+        "configured": deployment_configured,
+        "language": settings.travelguide_language.strip().lower() or "en",
+        "ttsProvider": tts_provider,
+    }
 
 
 @app.post("/api/config/session")
@@ -81,6 +93,16 @@ async def poi_detail_stream(payload: PoiDetailRequest):
         raise HTTPException(status_code=500, detail=f"Failed to stream detail: {str(e)}")
 
 
+@app.post("/api/audio/tts")
+async def audio_tts(payload: TtsRequest):
+    try:
+        audio = await minimax_tts(settings, payload.text, payload.language)
+        return Response(content=audio, media_type="audio/mpeg")
+    except Exception as e:
+        logger.error(f"Error generating TTS audio: {e}")
+        raise HTTPException(status_code=502, detail=str(e))
+
+
 # Catch-all: serve index.html for client-side routing (only in production with dist/)
 if _dist.exists():
     @app.get("/{full_path:path}")
@@ -89,4 +111,3 @@ if _dist.exists():
         if file.is_file():
             return FileResponse(file)
         return FileResponse(_dist / "index.html")
-

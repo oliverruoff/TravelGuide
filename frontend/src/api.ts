@@ -1,5 +1,17 @@
 import type { PoiSummary, RawGeoCandidate } from './types'
 
+export type RuntimeConfig = {
+  configured: boolean
+  language: string
+  ttsProvider: 'browser' | 'minimax'
+}
+
+export async function getRuntimeConfig(): Promise<RuntimeConfig> {
+  const response = await fetch('/api/config/runtime')
+  if (!response.ok) throw new Error('Could not load runtime config')
+  return response.json()
+}
+
 export async function getCandidates(lat: number, lng: number): Promise<RawGeoCandidate[]> {
   const response = await fetch('/api/geo/candidates', {
     method: 'POST',
@@ -63,3 +75,20 @@ export async function streamDetail(
   }
 }
 
+export async function synthesizeSpeech(text: string, language: string): Promise<Blob> {
+  const response = await fetch('/api/audio/tts', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text, language })
+  })
+  if (!response.ok) {
+    const errorText = await response.text()
+    try {
+      const errorJson = JSON.parse(errorText) as { detail?: string }
+      throw new Error(errorJson.detail || 'Could not generate audio')
+    } catch {
+      throw new Error(errorText || 'Could not generate audio')
+    }
+  }
+  return response.blob()
+}

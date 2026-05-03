@@ -50,6 +50,11 @@ class PoiDetailRequest(BaseModel):
     poi: PoiSummary
 
 
+class TtsRequest(BaseModel):
+    language: str = "en"
+    text: str = Field(min_length=1, max_length=10000)
+
+
 class SessionConfigRequest(BaseModel):
     language: str = "en"
     minimaxApiKey: str | None = None
@@ -62,4 +67,3 @@ class Achievement(BaseModel):
     description: str
     unlockedAt: int
     relatedPoiId: str | None = None
-

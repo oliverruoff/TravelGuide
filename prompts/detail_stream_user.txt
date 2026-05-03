@@ -1,5 +1,5 @@
 Write a beautiful, well-researched mobile travel guide entry in {language}.
-Incorporate in the start of the guide the name of this POI: {poi_name}.
+The first sentence must be complete and must start with the exact place name: {poi_name}.
 Example shape in German: '<POI name> ist ...'. Do not start mid-thought, with a fragment, or with generic filler.
 Never use the words POI, category, metadata, map data, source data, or available sources in the user-facing text.
 Tone: vivid, concise, useful, premium guidebook. Mention why it matters, what to notice, a good-to-know detail, and one tiny exploration tip.
