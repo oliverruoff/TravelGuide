@@ -677,7 +677,6 @@ function DetailCard({ poi, onClose }: { poi: PoiSummary; onClose: () => void }) 
         </div>
         <div className="detail-actions">
           <button onClick={() => savePoi(poi)}><Bookmark size={18} /> Save</button>
-          <button onClick={() => markVisited(poi)}><Award size={18} /> Visited</button>
           <button onClick={speak}><Volume2 size={18} /> {speaking ? 'Stop' : 'Listen'}</button>
         </div>
       </motion.article>
