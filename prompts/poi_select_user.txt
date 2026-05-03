@@ -1,0 +1,10 @@
+Select up to 10 POIs for a polished mobile travel guide, but return fewer if only a few are actually worthwhile.
+Use ONLY the provided candidate ids. Do not invent places, do not rename them into famous attractions, and do not change coordinates.
+Never select two items with the same normalized name. If multiple candidates share the same name, select at most one.
+For small villages, prefer real local context such as rivers, village centers, churches, information boards, old public buildings, restaurants, and trails.
+Avoid schools, kindergartens, banks, industrial companies, hairdressers, and emergency services unless the candidate itself clearly has visitor value.
+Return ONLY a JSON array. Each item must contain id, name, lat, lng, category, oneLiner, confidence.
+Use language: {language}. Prefer culturally interesting, scenic, historic, unusual, or locally meaningful places.
+
+Candidates:
+{candidates_json}

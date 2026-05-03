@@ -4,12 +4,14 @@ import type { GeoFix, PoiSummary } from './types'
 type AppState = {
   language: string
   configured: boolean
+  theme: 'light' | 'dark'
   geo?: GeoFix
   pois: PoiSummary[]
   activePoi?: PoiSummary
   savedOpen: boolean
   setLanguage: (language: string) => void
   setConfigured: (configured: boolean) => void
+  toggleTheme: () => void
   setGeo: (geo: GeoFix) => void
   setPois: (pois: PoiSummary[]) => void
   setActivePoi: (poi?: PoiSummary) => void
@@ -19,6 +21,7 @@ type AppState = {
 export const useAppStore = create<AppState>((set) => ({
   language: localStorage.getItem('travelguide.language') ?? 'en',
   configured: localStorage.getItem('travelguide.configured') === 'true',
+  theme: (localStorage.getItem('travelguide.theme') === 'dark' ? 'dark' : 'light'),
   pois: [],
   savedOpen: false,
   setLanguage: (language) => {
@@ -29,9 +32,13 @@ export const useAppStore = create<AppState>((set) => ({
     localStorage.setItem('travelguide.configured', String(configured))
     set({ configured })
   },
+  toggleTheme: () => set((state) => {
+    const theme = state.theme === 'light' ? 'dark' : 'light'
+    localStorage.setItem('travelguide.theme', theme)
+    return { theme }
+  }),
   setGeo: (geo) => set({ geo }),
   setPois: (pois) => set({ pois }),
   setActivePoi: (activePoi) => set({ activePoi }),
   setSavedOpen: (savedOpen) => set({ savedOpen })
 }))
-

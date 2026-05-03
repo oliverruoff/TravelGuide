@@ -1,0 +1,8 @@
+Create compact card metadata for this POI. Return ONLY JSON with category and oneLiner.
+Language: {language}. One-liner max 110 characters.
+
+POI:
+{poi_json}
+
+Sources:
+{sources_json}

@@ -3,12 +3,26 @@ import math
 import re
 from urllib.parse import quote
 from collections.abc import AsyncIterator
+from functools import lru_cache
+from pathlib import Path
 from typing import Any
 
 import httpx
 
 from .models import PoiSummary, RawGeoCandidate
 from .settings import Settings
+
+
+PROMPTS_DIR = Path(__file__).resolve().parents[1] / "prompts"
+
+
+@lru_cache(maxsize=None)
+def load_prompt(name: str) -> str:
+    return (PROMPTS_DIR / name).read_text(encoding="utf-8").strip()
+
+
+def render_prompt(name: str, **values: Any) -> str:
+    return load_prompt(name).format(**values)
 
 
 def distance_meters(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
@@ -26,6 +40,19 @@ def _center_for_element(element: dict[str, Any]) -> tuple[float | None, float | 
         return element["lat"], element["lon"]
     center = element.get("center") or {}
     return center.get("lat"), center.get("lon")
+
+
+def normalize_name_key(name: str) -> str:
+    return re.sub(r"\s+", " ", name.casefold().strip())
+
+
+def dedupe_candidates_by_name(candidates: list[RawGeoCandidate]) -> list[RawGeoCandidate]:
+    best_by_name: dict[str, RawGeoCandidate] = {}
+    for candidate in sorted(candidates, key=lambda item: (-travel_candidate_score(item), item.distanceMeters, item.name)):
+        key = normalize_name_key(candidate.name)
+        if key and key not in best_by_name:
+            best_by_name[key] = candidate
+    return sorted(best_by_name.values(), key=lambda item: (item.distanceMeters, item.name))
 
 
 def normalize_overpass(data: dict[str, Any], origin_lat: float, origin_lng: float) -> list[RawGeoCandidate]:
@@ -56,8 +83,7 @@ def normalize_overpass(data: dict[str, Any], origin_lat: float, origin_lng: floa
             )
         )
 
-    candidates.sort(key=lambda item: (item.distanceMeters, item.name))
-    return candidates[:80]
+    return dedupe_candidates_by_name(candidates)[:80]
 
 
 def build_overpass_query(lat: float, lng: float, radius_meters: int) -> str:
@@ -88,7 +114,7 @@ async def fetch_overpass(settings: Settings, lat: float, lng: float, radius_mete
     if 0 < travel_candidate_count(candidates) < 8 and radius_meters < 1000:
         expanded = await _fetch_overpass_radius(settings, lat, lng, 1000)
         merged = {item.id: item for item in [*expanded, *candidates]}
-        return sorted(merged.values(), key=lambda item: (item.distanceMeters, item.name))[:80]
+        return dedupe_candidates_by_name(list(merged.values()))[:80]
     return candidates
 
 
@@ -186,7 +212,8 @@ def heuristic_select(candidates: list[RawGeoCandidate]) -> list[PoiSummary]:
     def score(candidate: RawGeoCandidate) -> tuple[int, float]:
         return (-travel_candidate_score(candidate), candidate.distanceMeters)
 
-    selected = [candidate for candidate in sorted(candidates, key=score) if travel_candidate_score(candidate) > 0][:10]
+    unique_candidates = dedupe_candidates_by_name(candidates)
+    selected = [candidate for candidate in sorted(unique_candidates, key=score) if travel_candidate_score(candidate) > 0][:10]
     return [
         PoiSummary(
             id=item.id,
@@ -237,33 +264,33 @@ async def select_pois(settings: Settings, candidates: list[RawGeoCandidate], lan
         }
         for c in candidates[:60]
     ]
-    prompt = (
-        "Select up to 10 POIs for a polished mobile travel guide, but return fewer if only a few are actually worthwhile. "
-        "Use ONLY the provided candidate ids. Do not invent places, do not rename them into famous attractions, and do not change coordinates. "
-        "For small villages, prefer real local context such as rivers, village centers, churches, information boards, old public buildings, restaurants, and trails. "
-        "Avoid schools, kindergartens, banks, industrial companies, hairdressers, and emergency services unless the candidate itself clearly has visitor value. "
-        "Return ONLY a JSON array. Each item must contain id, name, lat, lng, category, oneLiner, confidence. "
-        f"Use language: {language}. Prefer culturally interesting, scenic, historic, unusual, or locally meaningful places."
+    prompt = render_prompt(
+        "poi_select_user.txt",
+        language=language,
+        candidates_json=json.dumps(compact, ensure_ascii=False),
     )
     try:
         response = await minimax_chat(
             settings,
             [
-                {"role": "system", "content": "You are a precise travel guide POI curator. You only output valid JSON."},
-                {"role": "user", "content": f"{prompt}\nCandidates:\n{json.dumps(compact, ensure_ascii=False)}"},
+                {"role": "system", "content": load_prompt("poi_select_system.txt")},
+                {"role": "user", "content": prompt},
             ],
         )
         content = response.json()["choices"][0]["message"]["content"]
         items = _extract_json_array(content)
         by_id = {candidate.id: candidate for candidate in candidates}
         selected: list[PoiSummary] = []
-        seen: set[str] = set()
+        seen_ids: set[str] = set()
+        seen_names: set[str] = set()
         for item in items:
             candidate_id = str(item.get("id", ""))
             candidate = by_id.get(candidate_id)
-            if not candidate or candidate_id in seen:
+            name_key = normalize_name_key(candidate.name) if candidate else ""
+            if not candidate or candidate_id in seen_ids or name_key in seen_names:
                 continue
-            seen.add(candidate_id)
+            seen_ids.add(candidate_id)
+            seen_names.add(name_key)
             selected.append(
                 PoiSummary(
                     id=candidate.id,
@@ -293,6 +320,87 @@ async def brave_search(settings: Settings, query: str, image: bool = False) -> d
         response = await client.get(f"{settings.brave_base_url}{endpoint}", headers=headers, params=params)
         response.raise_for_status()
         return response.json()
+
+
+def _dedupe_sources(results: list[dict[str, Any]], limit: int = 8) -> list[dict[str, Any]]:
+    seen: set[str] = set()
+    deduped: list[dict[str, Any]] = []
+    for result in results:
+        url = str(result.get("url") or "")
+        title = str(result.get("title") or "").strip()
+        description = str(result.get("description") or "").strip()
+        key = url or title
+        if not key or key in seen or (not title and not description):
+            continue
+        seen.add(key)
+        deduped.append({"title": title, "description": description, "url": url})
+        if len(deduped) >= limit:
+            break
+    return deduped
+
+
+def _strip_markup(text: str) -> str:
+    return re.sub(r"\s+", " ", re.sub(r"<[^>]+>", "", text)).strip()
+
+
+def _detail_queries(poi: PoiSummary) -> list[str]:
+    name = poi.name.strip()
+    compact_name = " ".join(token for token in re.split(r"\s+", name) if token)
+    queries = [
+        f'"{compact_name}"',
+        f'"{compact_name}" Geschichte',
+        f'"{compact_name}" Sehenswürdigkeit',
+    ]
+    if "jagstradweg" in name.lower() or "radweg" in name.lower():
+        queries.extend([
+            f'"{compact_name}" Kocher Jagst Radweg',
+            '"Kocher-Jagst-Radweg" Landwirtschaft',
+        ])
+    if "kocher" in name.lower():
+        queries.append(f'"{compact_name}" Neuenstadt Hardthausen Gochsen')
+    return queries
+
+
+async def detail_sources(settings: Settings, poi: PoiSummary) -> list[dict[str, Any]]:
+    collected: list[dict[str, Any]] = []
+    for query in _detail_queries(poi):
+        try:
+            web = await brave_search(settings, query)
+        except Exception:
+            continue
+        collected.extend(web.get("web", {}).get("results", [])[:4])
+    return _dedupe_sources(collected)
+
+
+def contextual_route_guide(poi: PoiSummary, sources: list[dict[str, Any]], language: str) -> str | None:
+    lowered = f"{poi.name} {poi.category}".lower()
+    if not ("radweg" in lowered or "jagstradweg" in lowered or "landwirtschaft" in lowered):
+        return None
+    source_text = " ".join(_strip_markup(str(source.get("description") or "")) for source in sources)
+    if "kocher" not in source_text.lower() and "jagst" not in source_text.lower():
+        return None
+
+    route_note = ""
+    if "Forchtenberg" in source_text and "Bad Friedrichshall" in source_text:
+        route_note = " Der recherchierte Routenhinweis nennt den Abschnitt von Forchtenberg ueber Hardthausen und Neuenstadt am Kocher bis Bad Friedrichshall."
+    surface_note = ""
+    if "asphaltiert" in source_text.lower() or "separaten radwegen" in source_text.lower():
+        surface_note = " Die Strecke wird als ueberwiegend asphaltiert und gut fahrbar beschrieben."
+    landscape_note = ""
+    if "wein" in source_text.lower() or "wiesen" in source_text.lower() or "wälder" in source_text.lower() or "waelder" in source_text.lower():
+        landscape_note = " Entlang der Etappe werden Weinreben, Waelder und gruene Wiesen als Landschaftsbild genannt."
+
+    if language.startswith("de"):
+        return (
+            f"{poi.name} lenkt den Blick auf eine leise, aber sehr typische Seite des Kocher-Jagst-Radwegs: die Kulturlandschaft zwischen Feldern, Flussnaehe und kleinen Orten.{route_note}{surface_note}\n\n"
+            f"Statt hier ein grosses Denkmal zu erwarten, lohnt sich der genaue Blick auf die Umgebung: Feldraender, Wirtschaftswege, Beschilderung und die Art, wie die Route durch den Ort gefuehrt wird.{landscape_note} Gerade diese Details machen verstaendlich, warum Radwege in Baden-Wuerttemberg oft mehr sind als reine Verbindungslinien.\n\n"
+            "Gut zu wissen: Wenn du hier kurz anhältst, schau nicht nur auf den Marker, sondern einmal in beide Richtungen des Weges. So erkennst du besser, wie Landwirtschaft, Dorfstruktur und Flusslandschaft zusammenhaengen."
+        )
+    return (
+        f"{poi.name} points to a quiet but characteristic side of the Kocher-Jagst cycle route: the working landscape between fields, river edges, and small settlements.{surface_note}\n\n"
+        f"Do not expect a headline monument here. The worthwhile part is the context: field edges, utility paths, signs, and the way the route moves through the village.{landscape_note} Those details make the stop feel connected to the wider route rather than isolated on the map.\n\n"
+        "Good to know: pause for a moment and look both directions along the path. It helps you read how farming, village structure, and the river landscape fit together."
+    )
 
 
 async def wikipedia_image(query: str, language: str = "en") -> str | None:
@@ -369,15 +477,19 @@ def _is_plausible_image_result(item: dict[str, Any], poi: PoiSummary) -> bool:
 
 def fallback_photo_url(poi: PoiSummary) -> str:
     text = f"{poi.name} {poi.category}".lower()
-    if "river" in text or "water" in text or "riverside" in text:
+    if "river" in text or "water" in text or "riverside" in text or "fluss" in text or "kocher" in text:
         return "https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=480&q=70"
-    if "bridge" in text:
+    if "bridge" in text or "bruck" in text or "brücke" in text:
         return "https://images.unsplash.com/photo-1518005020951-eccb494ad742?auto=format&fit=crop&w=480&q=70"
-    if "park" in text or "garden" in text or "view" in text:
+    if "park" in text or "garden" in text or "view" in text or "natur" in text or "trail" in text or "radweg" in text:
         return "https://images.unsplash.com/photo-1441974231531-c6227db76b6e?auto=format&fit=crop&w=480&q=70"
-    if "museum" in text or "historic" in text or "memorial" in text:
+    if "church" in text or "kirche" in text or "chapel" in text:
+        return "https://images.unsplash.com/photo-1548625149-fc4a29cf7092?auto=format&fit=crop&w=480&q=70"
+    if "restaurant" in text or "gastronomie" in text or "pizzeria" in text or "cafe" in text:
+        return "https://images.unsplash.com/photo-1514933651103-005eec06c04b?auto=format&fit=crop&w=480&q=70"
+    if "museum" in text or "historic" in text or "memorial" in text or "historisch" in text or "denkmal" in text:
         return "https://images.unsplash.com/photo-1566127444979-b3d2b654e3d7?auto=format&fit=crop&w=480&q=70"
-    if "hall" in text or "square" in text or "civic" in text:
+    if "hall" in text or "square" in text or "civic" in text or "rathaus" in text or "gemeinde" in text or "platz" in text:
         return "https://images.unsplash.com/photo-1511818966892-d7d671e672a2?auto=format&fit=crop&w=480&q=70"
     if "art" in text or "sculpture" in text:
         return "https://images.unsplash.com/photo-1547891654-e66ed7ebb968?auto=format&fit=crop&w=480&q=70"
@@ -406,15 +518,17 @@ async def enrich_poi(settings: Settings, poi: PoiSummary, language: str) -> PoiS
             except Exception:
                 image_url = None
         snippets = [{"title": r.get("title"), "description": r.get("description"), "url": r.get("url")} for r in results]
-        prompt = (
-            "Create compact card metadata for this POI. Return ONLY JSON with category and oneLiner. "
-            f"Language: {language}. One-liner max 110 characters.\nPOI: {poi.model_dump_json()}\nSources: {json.dumps(snippets, ensure_ascii=False)}"
+        prompt = render_prompt(
+            "poi_enrich_user.txt",
+            language=language,
+            poi_json=poi.model_dump_json(),
+            sources_json=json.dumps(snippets, ensure_ascii=False),
         )
         try:
             response = await minimax_chat(
                 settings,
                 [
-                    {"role": "system", "content": "You write concise, accurate travel guide card copy. Only valid JSON."},
+                    {"role": "system", "content": load_prompt("poi_enrich_system.txt")},
                     {"role": "user", "content": prompt},
                 ],
             )
@@ -425,31 +539,94 @@ async def enrich_poi(settings: Settings, poi: PoiSummary, language: str) -> PoiS
             if snippets and snippets[0].get("description"):
                 poi.oneLiner = snippets[0]["description"][:140]
         poi.imageUrl = image_url or poi.imageUrl
+        if not poi.imageUrl:
+            poi.imageUrl = fallback_photo_url(poi)
         poi.sourceRefs = [r["url"] for r in snippets if r.get("url")]
         return poi
     except Exception:
+        if not poi.imageUrl:
+            poi.imageUrl = fallback_photo_url(poi)
         return poi
 
 
-async def stream_detail(settings: Settings, poi: PoiSummary, language: str) -> AsyncIterator[str]:
-    sources = []
-    try:
-        web = await brave_search(settings, f"{poi.name} history travel guide")
-        sources = web.get("web", {}).get("results", [])[:5]
-    except Exception:
-        sources = []
+def safe_detail_fallback(poi: PoiSummary, sources: list[dict[str, Any]], language: str) -> str:
+    first_source = next((source for source in sources if source.get("description")), None)
+    if language.startswith("de"):
+        lowered = f"{poi.name} {poi.category}".lower()
+        if "radweg" in lowered or "information" in lowered:
+            intro = (
+                f"{poi.name} ist ein kleiner Orientierungspunkt am Weg, der den Blick auf die Landschaft am Kocher schaerft. "
+                "Der Name verweist auf das Zusammenspiel aus Landwirtschaft, Flussraum und Radroute, das diese Gegend praegt."
+            )
+        elif "kirche" in lowered or "church" in lowered:
+            intro = f"{poi.name} praegt als kirchlicher Ort das Ortsbild und lohnt sich vor allem fuer einen ruhigen Blick auf Architektur, Lage und Details."
+        elif "kocher" in lowered or "fluss" in lowered or "river" in lowered:
+            intro = f"{poi.name} fuehrt dich an die Flusslandschaft des Kochers, einen der stillen roten Faeden dieser Gegend."
+        else:
+            intro = f"{poi.name} lohnt sich als kurzer Halt, weil der Ort etwas ueber den Alltag und die Struktur der Umgebung erzaehlt."
+        if first_source:
+            intro += f" Recherchierter Hinweis: {str(first_source['description']).strip()[:220]}"
+        return (
+            f"{intro}\n\n"
+            "Gut zu wissen: Achte vor Ort auf Beschilderung, Wegebeziehungen, Materialien und darauf, wie sich der Platz in die umliegenden Felder, Haeuser oder den Flussraum einbindet. "
+            "Das sind die Details, die einen unscheinbaren Kartenpunkt zu einem echten kleinen Reisefuehrer-Moment machen, ohne unbelegte Geschichte zu erfinden."
+        )
+    lowered = f"{poi.name} {poi.category}".lower()
+    if "cycle" in lowered or "radweg" in lowered or "information" in lowered:
+        intro = f"{poi.name} is a small orientation point along the route, drawing attention to the farmland, river landscape, and everyday geography around the Kocher."
+    elif "church" in lowered or "kirche" in lowered:
+        intro = f"{poi.name} stands out as a quiet church stop, best approached through its setting, architecture, and small visible details."
+    elif "kocher" in lowered or "river" in lowered:
+        intro = f"{poi.name} brings you close to the Kocher river landscape, one of the calm threads running through this area."
+    else:
+        intro = f"{poi.name} is worth a short pause because it says something about the everyday shape of the surrounding place."
+    if first_source:
+        intro += f" Researched note: {str(first_source['description']).strip()[:220]}"
+    return (
+        f"{intro}\n\n"
+        "Good to know: look for signage, path connections, materials, sightlines, and how the spot fits into nearby fields, houses, or the river corridor. "
+        "Those observable details make the stop useful without inventing unsupported history."
+    )
 
-    prompt = (
-        f"Write a beautiful, well-researched mobile travel guide entry in {language}. "
-        "Tone: vivid, concise, useful, premium guidebook. Mention why it matters, what to notice, and a tiny exploration tip. "
-        "Avoid unsupported claims. Length: 3-5 short paragraphs.\n"
-        f"POI: {poi.model_dump_json()}\nSources: {json.dumps(sources, ensure_ascii=False)}"
+
+async def detail_text_completion(settings: Settings, poi: PoiSummary, sources: list[dict[str, Any]], language: str) -> str:
+    prompt = render_prompt(
+        "detail_completion_user.txt",
+        language=language,
+        poi_name=poi.name,
+        poi_json=poi.model_dump_json(),
+        sources_json=json.dumps(sources, ensure_ascii=False),
+    )
+    response = await minimax_chat(
+        settings,
+        [
+            {"role": "system", "content": load_prompt("detail_completion_system.txt")},
+            {"role": "user", "content": prompt},
+        ],
+    )
+    return response.json()["choices"][0]["message"]["content"].strip()
+
+
+async def stream_detail(settings: Settings, poi: PoiSummary, language: str) -> AsyncIterator[str]:
+    sources = await detail_sources(settings, poi)
+    contextual = contextual_route_guide(poi, sources, language)
+    if contextual:
+        for word in contextual.split(" "):
+            yield word + " "
+        return
+
+    prompt = render_prompt(
+        "detail_stream_user.txt",
+        language=language,
+        poi_name=poi.name,
+        poi_json=poi.model_dump_json(),
+        sources_json=json.dumps(sources, ensure_ascii=False),
     )
     headers = {"Authorization": f"Bearer {settings.minimax_api_key}", "Content-Type": "application/json"}
     payload = {
         "model": settings.minimax_model,
         "messages": [
-            {"role": "system", "content": "You are an excellent travel guide writer."},
+            {"role": "system", "content": load_prompt("detail_stream_system.txt")},
             {"role": "user", "content": prompt},
         ],
         "temperature": 0.45,
@@ -458,6 +635,7 @@ async def stream_detail(settings: Settings, poi: PoiSummary, language: str) -> A
     }
     try:
         in_thinking = False
+        yielded_any = False
         async with httpx.AsyncClient(timeout=None) as client:
             async with client.stream("POST", f"{settings.minimax_base_url}/v1/chat/completions", json=payload, headers=headers) as response:
                 response.raise_for_status()
@@ -483,14 +661,28 @@ async def stream_detail(settings: Settings, poi: PoiSummary, language: str) -> A
                                 else:
                                     start = visible.find("<think>")
                                     if start == -1:
+                                        yielded_any = True
                                         yield visible
                                         visible = ""
                                     else:
                                         if start > 0:
+                                            yielded_any = True
                                             yield visible[:start]
                                         visible = visible[start + len("<think>") :]
                                         in_thinking = True
                     except Exception:
                         continue
+        if not yielded_any:
+            try:
+                fallback_text = await detail_text_completion(settings, poi, sources, language)
+            except Exception:
+                fallback_text = safe_detail_fallback(poi, sources, language)
+            for word in fallback_text.split(" "):
+                yield word + " "
     except Exception:
-        return
+        try:
+            fallback_text = await detail_text_completion(settings, poi, sources, language)
+        except Exception:
+            fallback_text = safe_detail_fallback(poi, sources, language)
+        for word in fallback_text.split(" "):
+            yield word + " "

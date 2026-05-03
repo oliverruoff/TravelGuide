@@ -1,0 +1,16 @@
+Write a beautiful, well-researched mobile travel guide entry in {language}.
+The first sentence MUST start with the POI name '{poi_name}' and feel like the beginning of an article, not like a continuation.
+Example shape in German: '<POI name> ist ...'. Do not start mid-thought, with a fragment, or with generic filler.
+Never use the words POI, category, metadata, map data, source data, or available sources in the user-facing text.
+Tone: vivid, concise, useful, premium guidebook. Mention why it matters, what to notice, a good-to-know detail, and one tiny exploration tip.
+Only include fun facts or historical claims when supported by the provided sources or the POI metadata.
+Never claim what a sign, board, church, monument, or building explains/contains unless a source explicitly says it.
+Do not invent ages, founders, 'oldest' claims, regions, wineries, generations, awards, or official status.
+If sources are thin, focus on observable local context instead of inventing specifics, but still write like a human guide.
+Avoid unsupported claims. Length: 3-5 short paragraphs.
+
+POI:
+{poi_json}
+
+Sources:
+{sources_json}
