@@ -530,6 +530,7 @@ function DetailCard({ poi, onClose }: { poi: PoiSummary; onClose: () => void }) 
   const [failed, setFailed] = useState(false)
   const [speaking, setSpeaking] = useState(false)
   const [exitY, setExitY] = useState<'105%' | '-105%'>('105%')
+  const [saveAnimationKey, setSaveAnimationKey] = useState<string | null>(null)
   const draftTextRef = useRef('')
   const displayIndexRef = useRef(0)
   const animationIdRef = useRef<number | null>(null)
@@ -614,6 +615,14 @@ function DetailCard({ poi, onClose }: { poi: PoiSummary; onClose: () => void }) 
     window.requestAnimationFrame(onClose)
   }
 
+  function handleSave() {
+    savePoi(poi)
+    // Trigger the copy animation
+    setSaveAnimationKey(Date.now().toString())
+    // Reset after animation completes
+    setTimeout(() => setSaveAnimationKey(null), 700)
+  }
+
   return (
     <motion.div className="detail-backdrop" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
       <motion.article
@@ -676,10 +685,50 @@ function DetailCard({ poi, onClose }: { poi: PoiSummary; onClose: () => void }) 
           )}
         </div>
         <div className="detail-actions">
-          <button onClick={() => savePoi(poi)}><Bookmark size={18} /> Save</button>
+          <button onClick={handleSave}><Bookmark size={18} /> Save</button>
           <button onClick={speak}><Volume2 size={18} /> {speaking ? 'Stop' : 'Listen'}</button>
         </div>
       </motion.article>
+      <AnimatePresence>
+        {saveAnimationKey && (
+          <motion.div
+            key={saveAnimationKey}
+            className="save-copy-card"
+            initial={{ 
+              scale: 1,
+              x: 0,
+              y: 0,
+              opacity: 1
+            }}
+            animate={{ 
+              scale: 0.08,
+              x: 'calc(100% - 50px)',
+              y: -100,
+              opacity: 0
+            }}
+            transition={{ 
+              duration: 0.7,
+              ease: 'easeInOut'
+            }}
+            style={{
+              position: 'absolute',
+              pointerEvents: 'none',
+              originX: 0.5,
+              originY: 0.5
+            }}
+          >
+            <div className="save-copy-inner">
+              <PoiCard
+                poi={poi}
+                index={0}
+                active={false}
+                onSelect={() => {}}
+                onOpen={() => {}}
+              />
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </motion.div>
   )
 }

@@ -645,8 +645,20 @@ input, select {
 }
 details { margin-top: 12px; font-size: 12px; }
 details a { display: block; color: var(--accent); overflow-wrap: anywhere; margin-top: 6px; }
-.detail-actions { padding: 12px 14px 16px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 9px; }
+.detail-actions { padding: 12px 14px 16px; display: grid; grid-template-columns: repeat(2, 1fr); gap: 9px; }
 .detail-actions button { padding: 12px 9px; border-radius: 14px; font-size: 13px; }
+
+.save-copy-card {
+  position: fixed;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 11;
+}
+
+.save-copy-inner {
+  width: 320px;
+}
 
 .saved-drawer {
   position: absolute;
