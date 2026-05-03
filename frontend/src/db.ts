@@ -45,3 +45,7 @@ export async function unlockAchievement(achievement: Achievement) {
   if (!existing) await db.achievements.put(achievement)
 }
 
+export async function deletePoi(poiId: string) {
+  await db.savedPois.delete(poiId)
+}
+

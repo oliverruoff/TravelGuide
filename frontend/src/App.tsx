@@ -3,7 +3,7 @@ import { Award, Bookmark, Compass, LocateFixed, MapPin, Moon, MousePointer2, Pla
 import maplibregl from 'maplibre-gl'
 import { type PointerEvent, useEffect, useMemo, useRef, useState } from 'react'
 import { enrichPoi, getCandidates, selectPois, streamDetail } from './api'
-import { db, markVisited, savePoi, unlockAchievement, type StoredPoi } from './db'
+import { db, markVisited, savePoi, deletePoi, unlockAchievement, type StoredPoi } from './db'
 import { useAppStore } from './store'
 import type { GeoFix, PoiSummary } from './types'
 
@@ -23,6 +23,13 @@ function distanceMeters(a: GeoFix, b: GeoFix) {
   const sinLng = Math.sin(dLng / 2)
   const h = sinLat * sinLat + Math.cos(lat1) * Math.cos(lat2) * sinLng * sinLng
   return 2 * radius * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h))
+}
+
+function formatDistance(meters: number): string {
+  if (meters < 1000) {
+    return `${Math.round(meters)}m`
+  }
+  return `${(meters / 1000).toFixed(1)}km`
 }
 
 function poiNameKey(poi: PoiSummary) {
@@ -521,7 +528,7 @@ function PoiCard({
   )
 }
 
-function DetailCard({ poi, onClose }: { poi: PoiSummary; onClose: () => void }) {
+function DetailCard({ poi, userGeo, onClose }: { poi: PoiSummary; userGeo?: GeoFix; onClose: () => void }) {
   const { language } = useAppStore()
   const dragControls = useDragControls()
   const [text, setText] = useState('')
@@ -625,12 +632,12 @@ function DetailCard({ poi, onClose }: { poi: PoiSummary; onClose: () => void }) 
 
   return (
     <motion.div className="detail-backdrop" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-      <motion.article
-        className="detail-card"
-        initial={{ y: '100%', rotateX: -16, scale: 0.92 }}
+      <motion.div
+        className="mtg-card-container"
+        initial={{ y: '110%', rotateX: -12, scale: 0.9 }}
         animate={{ y: 0, rotateX: 0, scale: 1 }}
-        exit={{ y: exitY, opacity: 0, scale: 0.94 }}
-        transition={{ type: 'spring', damping: 22, stiffness: 190 }}
+        exit={{ y: exitY, opacity: 0, scale: 0.92 }}
+        transition={{ type: 'spring', damping: 24, stiffness: 200 }}
         drag="y"
         dragControls={dragControls}
         dragListener={false}
@@ -642,89 +649,105 @@ function DetailCard({ poi, onClose }: { poi: PoiSummary; onClose: () => void }) 
           }
         }}
       >
-        <button className="icon close" onClick={() => closeWithDirection('down')} aria-label="Close"><X size={20} /></button>
-        <div
-          className="collage drag-handle"
-          onPointerDown={(event) => dragControls.start(event.nativeEvent)}
-        >
-          <PoiVisual poi={poi} large />
-          <div className="collage-shine" />
-        </div>
-        <div className="detail-body">
-          <span className="category">{poi.category}</span>
-          <h2>{poi.name}</h2>
-          {loading ? (
-            <div className="guide-loading">
-              <strong>Researching guide text...</strong>
-              <div className="text-skeleton" aria-hidden="true">
-                <span />
-                <span />
-                <span />
-                <span />
-                <span />
+        {/* Outer card frame */}
+        <div className="mtg-card">
+
+          {/* Close button — floats above the card */}
+          <button className="mtg-close" onClick={() => closeWithDirection('down')} aria-label="Close"><X size={18} /></button>
+
+          {/* Inner coloured frame */}
+          <div className="mtg-frame">
+
+            {/* ── Title bar ── */}
+            <div className="mtg-title-bar">
+              <span className="mtg-name">{poi.name}</span>
+              {userGeo && (
+                <span className="mtg-cost"
+                  title="Distance from you">
+                  <MapPin size={11} />
+                  {formatDistance(distanceMeters(userGeo, { latitude: poi.lat, longitude: poi.lng }))}
+                </span>
+              )}
+            </div>
+
+            {/* ── Art box ── */}
+            <div
+              className="mtg-art drag-handle"
+              onPointerDown={(event) => dragControls.start(event.nativeEvent)}
+            >
+              <PoiVisual poi={poi} large />
+              <div className="mtg-art-shine" />
+              {/* drag handle pill */}
+              <div className="mtg-drag-pill" />
+            </div>
+
+            {/* ── Type line ── */}
+            <div className="mtg-type-line">
+              <span className="mtg-type-text">Landmark — {poi.category}</span>
+              <span className={`mtg-set-symbol ${poi.confidence > 0.8 ? 'mythic' : poi.confidence > 0.6 ? 'rare' : 'uncommon'}`}>
+                {poi.confidence > 0.8 ? '✦' : poi.confidence > 0.6 ? '◆' : '◈'}
+              </span>
+            </div>
+
+            {/* ── Text box (parchment) ── */}
+            <div className="mtg-textbox">
+              {!text ? (
+                <div className="guide-loading">
+                  <strong>Researching guide text…</strong>
+                  <div className="text-skeleton" aria-hidden="true">
+                    <span /><span /><span /><span /><span />
+                  </div>
+                </div>
+              ) : (
+                <motion.p
+                  className="mtg-flavor"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  transition={{ duration: 0.3 }}
+                >
+                  {displayedText}
+                  {displayedText.length < text.length && <span className="typing-cursor" />}
+                </motion.p>
+              )}
+
+              {!loading && text && poi.sourceRefs.length > 0 && (
+                <details className="mtg-sources">
+                  <summary>Sources</summary>
+                  {poi.sourceRefs.slice(0, 4).map((source) => (
+                    <a href={source} target="_blank" rel="noreferrer" key={source}>{source}</a>
+                  ))}
+                </details>
+              )}
+            </div>
+
+            {/* ── Bottom bar: actions + P/T box ── */}
+            <div className="mtg-bottom-bar">
+              <div className="mtg-actions">
+                <button className="mtg-btn save" onClick={handleSave}><Bookmark size={15} /> Save</button>
+                <button className="mtg-btn listen" onClick={speak}><Volume2 size={15} /> {speaking ? 'Stop' : 'Listen'}</button>
+              </div>
+              <div className="mtg-pt-box" title="Confidence score">
+                {Math.round(poi.confidence * 100)}<span>/100</span>
               </div>
             </div>
-          ) : !text ? (
-            <p className="guide-text muted">{failed ? 'No guide text could be loaded right now.' : 'No guide text available yet.'}</p>
-          ) : (
-            <motion.p 
-              className="guide-text"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ duration: 0.3 }}
-            >
-              {displayedText}
-              {displayedText.length < text.length && <span className="typing-cursor" />}
-            </motion.p>
-          )}
-          {!loading && text && poi.sourceRefs.length > 0 && (
-            <details>
-              <summary>Sources</summary>
-              {poi.sourceRefs.slice(0, 4).map((source) => <a href={source} target="_blank" key={source}>{source}</a>)}
-            </details>
-          )}
-        </div>
-        <div className="detail-actions">
-          <button onClick={handleSave}><Bookmark size={18} /> Save</button>
-          <button onClick={speak}><Volume2 size={18} /> {speaking ? 'Stop' : 'Listen'}</button>
-        </div>
-      </motion.article>
+
+          </div>{/* end .mtg-frame */}
+        </div>{/* end .mtg-card */}
+      </motion.div>
+
+      {/* Save animation */}
       <AnimatePresence>
         {saveAnimationKey && (
           <motion.div
             key={saveAnimationKey}
             className="save-copy-card"
-            initial={{ 
-              scale: 1,
-              x: 0,
-              y: 0,
-              opacity: 1
-            }}
-            animate={{ 
-              scale: 0.08,
-              x: 'calc(100% - 50px)',
-              y: -100,
-              opacity: 0
-            }}
-            transition={{ 
-              duration: 0.7,
-              ease: 'easeInOut'
-            }}
-            style={{
-              position: 'absolute',
-              pointerEvents: 'none',
-              originX: 0.5,
-              originY: 0.5
-            }}
+            initial={{ scale: 1, x: 0, y: 0, opacity: 1 }}
+            animate={{ scale: 0.08, x: 'calc(100% - 50px)', y: -100, opacity: 0 }}
+            transition={{ duration: 0.7, ease: 'easeInOut' }}
+            style={{ position: 'absolute', pointerEvents: 'none', originX: 0.5, originY: 0.5 }}
           >
             <div className="save-copy-inner">
-              <PoiCard
-                poi={poi}
-                index={0}
-                active={false}
-                onSelect={() => {}}
-                onOpen={() => {}}
-              />
+              <PoiCard poi={poi} index={0} active={false} onSelect={() => {}} onOpen={() => {}} />
             </div>
           </motion.div>
         )}
@@ -733,13 +756,39 @@ function DetailCard({ poi, onClose }: { poi: PoiSummary; onClose: () => void }) 
   )
 }
 
-function SavedDrawer({ onClose }: { onClose: () => void }) {
+function ConfirmDialog({ title, message, onConfirm, onCancel }: { title: string; message: string; onConfirm: () => void; onCancel: () => void }) {
+  return (
+    <motion.div className="confirm-dialog-overlay" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={onCancel}>
+      <motion.div className="confirm-dialog" initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }} onClick={(e) => e.stopPropagation()}>
+        <h3>{title}</h3>
+        <p>{message}</p>
+        <div className="confirm-actions">
+          <button className="confirm-cancel" onClick={onCancel}>Cancel</button>
+          <button className="confirm-delete" onClick={onConfirm}>Delete</button>
+        </div>
+      </motion.div>
+    </motion.div>
+  )
+}
+
+function SavedDrawer({ onClose, onOpenGuide }: { onClose: () => void; onOpenGuide: (poi: PoiSummary) => void }) {
   const [items, setItems] = useState<StoredPoi[]>([])
-  const [detailPoi, setDetailPoi] = useState<PoiSummary | undefined>()
+  const [deleteConfirm, setDeleteConfirm] = useState<string | undefined>()
   
   useEffect(() => {
     db.savedPois.orderBy('savedAt').reverse().toArray().then(setItems)
   }, [])
+  
+  const handleOpenGuide = (item: PoiSummary) => {
+    onOpenGuide(item)
+    onClose()
+  }
+
+  const handleDeletePoi = async (poiId: string) => {
+    await deletePoi(poiId)
+    setItems((prev) => prev.filter((item) => item.id !== poiId))
+    setDeleteConfirm(undefined)
+  }
   
   return (
     <>
@@ -751,19 +800,37 @@ function SavedDrawer({ onClose }: { onClose: () => void }) {
         ) : (
           <div className="saved-pois-list">
             {items.map((item) => (
-              <PoiCard 
-                key={item.id} 
-                poi={item} 
-                index={0} 
-                active={false} 
-                onSelect={() => undefined} 
-                onOpen={() => setDetailPoi(item)}
-              />
+              <div key={item.id} className="saved-poi-wrapper">
+                <PoiCard 
+                  poi={item} 
+                  index={0} 
+                  active={false} 
+                  onSelect={() => undefined} 
+                  onOpen={() => handleOpenGuide(item)}
+                />
+                <button
+                  className="delete-poi-btn"
+                  onClick={() => setDeleteConfirm(item.id)}
+                  aria-label={`Delete ${item.name}`}
+                  title={`Delete ${item.name}`}
+                >
+                  <X size={18} />
+                </button>
+              </div>
             ))}
           </div>
         )}
       </motion.aside>
-      <AnimatePresence>{detailPoi && <DetailCard poi={detailPoi} onClose={() => setDetailPoi(undefined)} />}</AnimatePresence>
+      <AnimatePresence>
+        {deleteConfirm && (
+          <ConfirmDialog
+            title="Delete Saved POI?"
+            message={`Are you sure you want to remove "${items.find((i) => i.id === deleteConfirm)?.name || 'this POI'}" from your saved list?`}
+            onConfirm={() => handleDeletePoi(deleteConfirm)}
+            onCancel={() => setDeleteConfirm(undefined)}
+          />
+        )}
+      </AnimatePresence>
     </>
   )
 }
@@ -990,6 +1057,16 @@ function MainExperience() {
             <div className="empty-state">
               <Play size={24} />
               <p>{loading ? 'Building your first travel cards...' : 'Tap refresh to scan nearby POIs.'}</p>
+              {loading && (
+                <div className="skeleton-card">
+                  <div className="skeleton-thumb" />
+                  <div className="skeleton-content">
+                    <div className="skeleton-category" />
+                    <div className="skeleton-title" />
+                    <div className="skeleton-text" />
+                  </div>
+                </div>
+              )}
             </div>
           )}
           {pois.map((poi, index) => (
@@ -1008,8 +1085,8 @@ function MainExperience() {
           ))}
         </div>
       </section>
-      <AnimatePresence>{detailPoi && <DetailCard poi={detailPoi} onClose={() => setDetailPoi(undefined)} />}</AnimatePresence>
-      <AnimatePresence>{savedOpen && <SavedDrawer onClose={() => setSavedOpen(false)} />}</AnimatePresence>
+      <AnimatePresence>{detailPoi && <DetailCard poi={detailPoi} userGeo={selectedGeo} onClose={() => setDetailPoi(undefined)} />}</AnimatePresence>
+      <AnimatePresence>{savedOpen && <SavedDrawer onClose={() => setSavedOpen(false)} onOpenGuide={setDetailPoi} />}</AnimatePresence>
     </main>
   )
 }

@@ -1,5 +1,5 @@
 Write a polished mobile travel guide text in {language} for this place.
-Start the first sentence exactly with the place name: {poi_name}
+Incorporate in the start of the guide the name of this POI: {poi_name}.
 Never use the terms POI, category, metadata, map data, source data, or available sources in the user-facing text.
 Use the sources if they contain relevant facts. If sources are thin, write about verifiable or observable context from the name and location only.
 Never claim what a sign, board, church, monument, or building explains/contains unless a source explicitly says it.
