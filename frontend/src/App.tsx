@@ -735,17 +735,36 @@ function DetailCard({ poi, onClose }: { poi: PoiSummary; onClose: () => void }) 
 
 function SavedDrawer({ onClose }: { onClose: () => void }) {
   const [items, setItems] = useState<StoredPoi[]>([])
+  const [detailPoi, setDetailPoi] = useState<PoiSummary | undefined>()
+  
   useEffect(() => {
     db.savedPois.orderBy('savedAt').reverse().toArray().then(setItems)
   }, [])
+  
   return (
-    <motion.aside className="saved-drawer" initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }}>
-      <button className="icon close" onClick={onClose} aria-label="Close"><X size={20} /></button>
-      <h2>Saved POIs</h2>
-      {items.length === 0 ? <p>No saved cards yet.</p> : items.map((item) => (
-        <PoiCard key={item.id} poi={item} index={0} active={false} onSelect={() => undefined} onOpen={() => undefined} />
-      ))}
-    </motion.aside>
+    <>
+      <motion.aside className="saved-drawer" initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }}>
+        <button className="icon close" onClick={onClose} aria-label="Close"><X size={20} /></button>
+        <h2>Saved POIs</h2>
+        {items.length === 0 ? (
+          <p>No saved cards yet.</p>
+        ) : (
+          <div className="saved-pois-list">
+            {items.map((item) => (
+              <PoiCard 
+                key={item.id} 
+                poi={item} 
+                index={0} 
+                active={false} 
+                onSelect={() => undefined} 
+                onOpen={() => setDetailPoi(item)}
+              />
+            ))}
+          </div>
+        )}
+      </motion.aside>
+      <AnimatePresence>{detailPoi && <DetailCard poi={detailPoi} onClose={() => setDetailPoi(undefined)} />}</AnimatePresence>
+    </>
   )
 }
 
