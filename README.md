@@ -162,7 +162,26 @@ docker run -p 8000:8000 \
 2. GitHub Actions will build and push on every `main` branch push
 3. Images are tagged as `ghcr.io/oliverruoff/travelguide:latest`
 
-### Option 5: Local Development
+### Option 5: Update a running deployment (Linux)
+
+Use the included `update.sh` script to pull and restart the container on any Linux server:
+
+```bash
+# Make executable once
+chmod +x update.sh
+
+# Run to update
+./update.sh
+```
+
+The script will:
+1. Stop and remove the currently running `travelguide` container
+2. Pull `ghcr.io/oliverruoff/travelguide:latest` from GHCR
+3. Start a fresh container on port `8000` with `--env-file .env`
+
+Your `.env` file must exist in the same directory as `update.sh` (the repo root).
+
+### Option 6: Local Development
 
 **Setup frontend:**
 
@@ -215,39 +234,18 @@ Backend will be available at `http://127.0.0.1:8000`.
 
 ## API Endpoints
 
-### Search POIs
-```
-POST /api/search
-Content-Type: application/json
+| Method | Path | Purpose |
+|--------|------|---------|
+| GET | `/api/health` | Health check |
+| GET | `/api/config/runtime` | Returns `{ configured, language }` |
+| POST | `/api/config/session` | No-op in v1 |
+| POST | `/api/geo/candidates` | Overpass raw geo results |
+| POST | `/api/poi/select` | LLM-curated `PoiSummary[]` |
+| POST | `/api/poi/enrich` | Enriched POI (image, oneLiner, sourceRefs) |
+| POST | `/api/poi/detail/stream` | SSE guide text stream |
 
-{
-  "query": "Paris"
-}
-```
+> **Note:** The SSE detail stream is a `POST`, not a `GET`. It terminates with `event: done\ndata: done\n\n`.
 
-Response:
-```json
-{
-  "pois": [
-    {
-      "id": "...",
-      "name": "Eiffel Tower",
-      "category": "Landmark",
-      "distance": 0.5,
-      "latitude": 48.858,
-      "longitude": 2.294
-    },
-    ...
-  ]
-}
-```
-
-### Stream Detail Guide
-```
-GET /api/detail/{poi_id}
-```
-
-Returns a Server-Sent Event (SSE) stream with guide text chunks.
 
 ## Docker Image Details
 

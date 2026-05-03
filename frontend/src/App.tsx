@@ -2,8 +2,8 @@ import { AnimatePresence, motion, useDragControls } from 'framer-motion'
 import { Award, Bookmark, Compass, LocateFixed, MapPin, Moon, MousePointer2, Play, RefreshCw, Settings, Sparkles, Sun, Volume2, X } from 'lucide-react'
 import maplibregl from 'maplibre-gl'
 import { type PointerEvent, useEffect, useMemo, useRef, useState } from 'react'
-import { enrichPoi, getCandidates, getRuntimeConfig, selectPois, streamDetail, synthesizeSpeech } from './api'
-import { db, markVisited, savePoi, deletePoi, unlockAchievement, type StoredPoi } from './db'
+import { enrichPoi, getCandidates, getRuntimeConfig, selectPois, streamDetail } from './api'
+import { db, markVisited, savePoi, deletePoi, unlockAchievement, getCachedScan, putCachedScan, clearCachedScan, getCachedDetail, putCachedDetail, updatePoiDetailText, type StoredPoi } from './db'
 import { useAppStore } from './store'
 import type { GeoFix, PoiSummary } from './types'
 
@@ -189,7 +189,7 @@ function readSavedFakeGeo(): GeoFix | undefined {
 }
 
 function Onboarding() {
-  const { language, ttsProvider, setLanguage, setTtsProvider, setConfigured } = useAppStore()
+  const { language, setLanguage, setConfigured } = useAppStore()
   const [miniKey, setMiniKey] = useState('')
   const [braveKey, setBraveKey] = useState('')
 
@@ -206,13 +206,6 @@ function Onboarding() {
             <option value="de">Deutsch</option>
             <option value="es">Español</option>
             <option value="fr">Français</option>
-          </select>
-        </label>
-        <label>
-          Text to Speech
-          <select value={ttsProvider} onChange={(event) => setTtsProvider(event.target.value === 'minimax' ? 'minimax' : 'browser')}>
-            <option value="browser">Browser voice</option>
-            <option value="minimax">MiniMax voice clone</option>
           </select>
         </label>
         <label>
@@ -569,23 +562,19 @@ function PoiCard({
 }
 
 function DetailCard({ poi, userGeo, onClose }: { poi: PoiSummary; userGeo?: GeoFix; onClose: () => void }) {
-  const { language, ttsProvider } = useAppStore()
+  const { language } = useAppStore()
   const dragControls = useDragControls()
   const [text, setText] = useState('')
   const [displayedText, setDisplayedText] = useState('')
   const [loading, setLoading] = useState(true)
   const [failed, setFailed] = useState(false)
   const [speaking, setSpeaking] = useState(false)
-  const [audioLoading, setAudioLoading] = useState(false)
-  const [audioError, setAudioError] = useState('')
   const [floatSettled, setFloatSettled] = useState(false)
   const [exitY, setExitY] = useState<'105%' | '-105%'>('105%')
   const [saveAnimationKey, setSaveAnimationKey] = useState<string | null>(null)
   const draftTextRef = useRef('')
   const displayIndexRef = useRef(0)
   const animationIdRef = useRef<number | null>(null)
-  const audioRef = useRef<HTMLAudioElement | null>(null)
-  const audioUrlRef = useRef<string | null>(null)
 
   useEffect(() => {
     setFloatSettled(false)
@@ -624,45 +613,60 @@ function DetailCard({ poi, userGeo, onClose }: { poi: PoiSummary; userGeo?: GeoF
     displayIndexRef.current = 0
     setLoading(true)
     setFailed(false)
-    setAudioError('')
-    
-    streamDetail(
-      poi,
-      language,
-      (chunk) => {
-        draftTextRef.current += chunk
-        // Update the full text (animation will handle display)
-        const fullText = ensureGuideStartsWithName(poi, draftTextRef.current)
-        setText(fullText)
-        // Clear loading state once we have content
-        if (fullText && loading) {
-          setLoading(false)
+
+    // Try to load from cache first
+    getCachedDetail(poi.id, language).then((cached) => {
+      if (cached) {
+        setText(cached)
+        setDisplayedText(cached)
+        displayIndexRef.current = cached.length
+        setLoading(false)
+        return
+      }
+
+      streamDetail(
+        poi,
+        language,
+        (chunk) => {
+          draftTextRef.current += chunk
+          // Update the full text (animation will handle display)
+          const fullText = ensureGuideStartsWithName(poi, draftTextRef.current)
+          setText(fullText)
+          // Clear loading state once we have content
+          if (fullText && loading) {
+            setLoading(false)
+          }
+        },
+        controller.signal,
+        async () => {
+          // Stream completed — persist to caches
+          const finalText = ensureGuideStartsWithName(poi, draftTextRef.current)
+          if (finalText) {
+            await putCachedDetail(poi.id, language, finalText)
+            // If this POI is user-saved, also update its stored detailText
+            const saved = await db.savedPois.get(poi.id)
+            if (saved) await updatePoiDetailText(poi.id, finalText)
+          }
         }
-      },
-      controller.signal
-    )
-      .then(() => {
-        const finalText = ensureGuideStartsWithName(poi, draftTextRef.current)
-        setText(finalText)
-        setFailed(!finalText)
-        setLoading(false)
-      })
-      .catch(() => {
-        setText('')
-        setDisplayedText('')
-        setLoading(false)
-        setFailed(true)
-      })
+      )
+        .then(() => {
+          const finalText = ensureGuideStartsWithName(poi, draftTextRef.current)
+          setText(finalText)
+          setFailed(!finalText)
+          setLoading(false)
+        })
+        .catch(() => {
+          setText('')
+          setDisplayedText('')
+          setLoading(false)
+          setFailed(true)
+        })
+    })
+
     return () => {
       controller.abort()
       speechSynthesis.cancel()
-      audioRef.current?.pause()
-      if (audioUrlRef.current) URL.revokeObjectURL(audioUrlRef.current)
-      audioRef.current = null
-      audioUrlRef.current = null
       setSpeaking(false)
-      setAudioLoading(false)
-      setAudioError('')
     }
   }, [poi, language])
 
@@ -676,42 +680,13 @@ function DetailCard({ poi, userGeo, onClose }: { poi: PoiSummary; userGeo?: GeoF
   }
 
   async function speak() {
-    if (speaking || audioLoading) {
+    if (speaking) {
       speechSynthesis.cancel()
-      audioRef.current?.pause()
       setSpeaking(false)
-      setAudioLoading(false)
       return
     }
     const speechText = text || poi.oneLiner
     if (!speechText.trim()) return
-    setAudioError('')
-    if (ttsProvider === 'minimax') {
-      setAudioLoading(true)
-      try {
-        if (audioUrlRef.current) URL.revokeObjectURL(audioUrlRef.current)
-        const audioBlob = await synthesizeSpeech(speechText, language)
-        const audioUrl = URL.createObjectURL(audioBlob)
-        audioUrlRef.current = audioUrl
-        const audio = new Audio(audioUrl)
-        audioRef.current = audio
-        audio.onplay = () => {
-          setAudioLoading(false)
-          setSpeaking(true)
-        }
-        audio.onended = () => setSpeaking(false)
-        audio.onerror = () => {
-          setAudioLoading(false)
-          setSpeaking(false)
-        }
-        await audio.play()
-      } catch (error) {
-        setAudioLoading(false)
-        setSpeaking(false)
-        setAudioError(error instanceof Error ? `MiniMax: ${error.message}` : 'MiniMax audio unavailable')
-      }
-      return
-    }
     playBrowserSpeech(speechText)
   }
 
@@ -750,8 +725,18 @@ function DetailCard({ poi, userGeo, onClose }: { poi: PoiSummary; userGeo?: GeoF
         {/* Outer card frame */}
         <motion.div
           className="mtg-card"
-          animate={{ y: floatSettled ? 0 : [0, -7, 3, 0] }}
-          transition={{ duration: 1, ease: 'easeInOut', times: [0, 0.35, 0.72, 1] }}
+          animate={floatSettled ? {
+            y: [0, -8, -5, -9, -4, -8, 0],
+            rotateX: [0, 1.5, 3, 1, 2.5, 0.5, 0],
+            rotateY: [0, -2, 0.5, 2.5, -1, 1.5, 0],
+          } : { y: [0, -7, 3, 0] }}
+          transition={floatSettled ? {
+            duration: 7,
+            ease: 'easeInOut',
+            repeat: Infinity,
+            repeatType: 'mirror',
+          } : { duration: 1, ease: 'easeInOut', times: [0, 0.35, 0.72, 1] }}
+          style={{ transformStyle: 'preserve-3d' }}
         >
 
           {/* Close button — floats above the card */}
@@ -820,14 +805,13 @@ function DetailCard({ poi, userGeo, onClose }: { poi: PoiSummary; userGeo?: GeoF
                   ))}
                 </details>
               )}
-              {audioError && <p className="mtg-audio-error">{audioError}</p>}
             </div>
 
             {/* ── Bottom bar: actions + P/T box ── */}
             <div className="mtg-bottom-bar">
               <div className="mtg-actions">
                 <button className="mtg-btn save" onClick={handleSave}><Bookmark size={15} /> Collect</button>
-                <button className="mtg-btn listen" onClick={speak}><Volume2 size={15} /> {speaking ? 'Stop' : audioLoading ? 'Loading' : 'Audio'}</button>
+                <button className="mtg-btn listen" onClick={speak}><Volume2 size={15} /> {speaking ? 'Stop' : 'Audio'}</button>
               </div>
               <div className="mtg-pt-box" title="Confidence score">
                 {Math.round(poi.confidence * 100)}<span>/100</span>
@@ -1035,13 +1019,25 @@ function MainExperience() {
     setStatus(mode === 'replace' ? 'Scanning...' : 'Checking nearby...')
     try {
       if (mode === 'replace') {
+        // Check scan cache before hitting the backend
+        const cached = await getCachedScan(scanGeo.latitude, scanGeo.longitude)
+        if (cached) {
+          setPois(cached.pois)
+          if (cached.pois.length > 0) setActivePoi(cached.pois[0])
+          lastScanGeoRef.current = scanGeo
+          setStatus('Ready.')
+          return
+        }
         setPois([])
         setActivePoi(undefined)
       }
       const existingNames = new Set(useAppStore.getState().pois.map(poiNameKey))
       const candidates = await getCandidates(scanGeo.latitude, scanGeo.longitude)
       setStatus(`Researching ${candidates.length} spots...`)
-      const selected = uniquePoisByName(await selectPois(candidates, language))
+      const byDistance = (a: PoiSummary, b: PoiSummary) =>
+        distanceMeters({ latitude: a.lat, longitude: a.lng }, { latitude: scanGeo.latitude, longitude: scanGeo.longitude }) -
+        distanceMeters({ latitude: b.lat, longitude: b.lng }, { latitude: scanGeo.latitude, longitude: scanGeo.longitude })
+      const selected = uniquePoisByName(await selectPois(candidates, language)).sort(byDistance)
       const incoming = selected.filter((poi) => !existingNames.has(poiNameKey(poi)))
       if (mode === 'prepend-new' && incoming.length === 0) {
         setStatus('No new spots yet.')
@@ -1082,6 +1078,16 @@ function MainExperience() {
             return next
           })
         }
+      }
+      // Persist the final enriched POI list to the scan cache
+      const finalPois = useAppStore.getState().pois
+      if (finalPois.length > 0) {
+        const mergedForCache = mode === 'prepend-new'
+          ? [...loadedIncoming, ...useAppStore.getState().pois].filter(
+              (p, i, arr) => arr.findIndex((q) => q.id === p.id) === i
+            ).slice(0, maxPoiListItems)
+          : finalPois
+        await putCachedScan(scanGeo.latitude, scanGeo.longitude, mergedForCache)
       }
       lastScanGeoRef.current = scanGeo
       setStatus('Ready.')
@@ -1152,7 +1158,7 @@ function MainExperience() {
               )}
             </AnimatePresence>
           </div>
-          <button className="icon" onClick={() => scan('replace', selectedGeo)} disabled={loading} aria-label="Refresh scan"><RefreshCw className={loading ? 'spin' : ''} size={19} /></button>
+          <button className="icon" onClick={async () => { await clearCachedScan(selectedGeo.latitude, selectedGeo.longitude); scan('replace', selectedGeo) }} disabled={loading} aria-label="Refresh scan"><RefreshCw className={loading ? 'spin' : ''} size={19} /></button>
           <button className="icon" onClick={() => setSavedOpen(true)} aria-label="Saved POIs"><Bookmark size={19} /></button>
         </header>
         <div className="poi-list">

@@ -346,12 +346,12 @@ async def select_pois(settings: Settings, candidates: list[RawGeoCandidate], lan
         return heuristic_select(candidates)
 
 
-async def brave_search(settings: Settings, query: str, image: bool = False) -> dict[str, Any]:
+async def brave_search(settings: Settings, query: str, image: bool = False, count: int = 5) -> dict[str, Any]:
     if not settings.brave_api_key:
         return {}
     endpoint = "/res/v1/images/search" if image else "/res/v1/web/search"
     headers = {"X-Subscription-Token": settings.brave_api_key, "Accept": "application/json"}
-    params = {"q": query, "count": 5}
+    params = {"q": query, "count": count}
     async with httpx.AsyncClient(timeout=20) as client:
         response = await client.get(f"{settings.brave_base_url}{endpoint}", headers=headers, params=params)
         response.raise_for_status()
@@ -486,9 +486,9 @@ def _poi_image_tokens(poi: PoiSummary) -> list[str]:
 
 def _image_result_url(item: dict[str, Any]) -> str | None:
     return (
-        item.get("thumbnail", {}).get("src")
-        or item.get("properties", {}).get("url")
+        item.get("properties", {}).get("url")
         or item.get("url")
+        or item.get("thumbnail", {}).get("src")
         or item.get("source")
     )
 
@@ -511,49 +511,103 @@ def _is_plausible_image_result(item: dict[str, Any], poi: PoiSummary) -> bool:
     return any(token in haystack for token in tokens)
 
 
+async def _validate_image_url(url: str) -> bool:
+    """HEAD-check a URL to confirm it resolves to an actual image (timeout 3 s)."""
+    try:
+        async with httpx.AsyncClient(timeout=3, follow_redirects=True) as client:
+            resp = await client.head(url)
+            if resp.status_code == 405:
+                # Server doesn't allow HEAD — try GET with range to fetch minimal bytes
+                resp = await client.get(url, headers={"Range": "bytes=0-0"})
+            content_type = resp.headers.get("content-type", "")
+            return resp.status_code < 400 and "image" in content_type
+    except Exception:
+        return False
+
+
+async def _pick_best_image(image_results: list[dict[str, Any]], poi: PoiSummary, max_checks: int = 3) -> str | None:
+    """Return the first plausible, reachable image URL from a Brave image result list."""
+    checked = 0
+    for item in image_results:
+        candidate_url = _image_result_url(item)
+        if not candidate_url or not _is_plausible_image_result(item, poi):
+            continue
+        if await _validate_image_url(candidate_url):
+            return candidate_url
+        checked += 1
+        if checked >= max_checks:
+            break
+    return None
+
+
 def fallback_photo_url(poi: PoiSummary) -> str:
     text = f"{poi.name} {poi.category}".lower()
-    if "river" in text or "water" in text or "riverside" in text or "fluss" in text or "kocher" in text:
+    if "river" in text or "water" in text or "riverside" in text or "fluss" in text or "kocher" in text or "bach" in text or "see" in text or "lake" in text:
         return "https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=480&q=70"
-    if "bridge" in text or "bruck" in text or "brücke" in text:
+    if "bridge" in text or "bruck" in text or "brücke" in text or "viaduct" in text:
         return "https://images.unsplash.com/photo-1518005020951-eccb494ad742?auto=format&fit=crop&w=480&q=70"
-    if "park" in text or "garden" in text or "view" in text or "natur" in text or "trail" in text or "radweg" in text:
-        return "https://images.unsplash.com/photo-1441974231531-c6227db76b6e?auto=format&fit=crop&w=480&q=70"
-    if "church" in text or "kirche" in text or "chapel" in text:
+    if "castle" in text or "burg" in text or "schloss" in text or "fortress" in text or "festung" in text or "palace" in text or "palast" in text:
+        return "https://images.unsplash.com/photo-1533154683836-84ea7a0bc310?auto=format&fit=crop&w=480&q=70"
+    if "tower" in text or "turm" in text or "campanile" in text or "belfry" in text:
+        return "https://images.unsplash.com/photo-1548515943-51f8fb98d0ea?auto=format&fit=crop&w=480&q=70"
+    if "church" in text or "kirche" in text or "chapel" in text or "kapelle" in text or "cathedral" in text or "dom" in text or "basilica" in text or "monastery" in text or "kloster" in text or "abbey" in text or "abtei" in text:
         return "https://images.unsplash.com/photo-1548625149-fc4a29cf7092?auto=format&fit=crop&w=480&q=70"
-    if "restaurant" in text or "gastronomie" in text or "pizzeria" in text or "cafe" in text:
+    if "fountain" in text or "brunnen" in text or "springbrunnen" in text:
+        return "https://images.unsplash.com/photo-1568515387631-8b650bbcdb90?auto=format&fit=crop&w=480&q=70"
+    if "market" in text or "markt" in text or "bazaar" in text or "bazar" in text:
+        return "https://images.unsplash.com/photo-1533900298318-6b8da08a523e?auto=format&fit=crop&w=480&q=70"
+    if "park" in text or "garden" in text or "garten" in text or "natur" in text or "trail" in text or "radweg" in text or "forest" in text or "wald" in text or "wiese" in text or "meadow" in text:
+        return "https://images.unsplash.com/photo-1441974231531-c6227db76b6e?auto=format&fit=crop&w=480&q=70"
+    if "view" in text or "viewpoint" in text or "aussicht" in text or "aussichtspunkt" in text or "panorama" in text:
+        return "https://images.unsplash.com/photo-1501854140801-50d01698950b?auto=format&fit=crop&w=480&q=70"
+    if "harbour" in text or "hafen" in text or "port" in text or "marina" in text:
+        return "https://images.unsplash.com/photo-1534430480872-3498386e7856?auto=format&fit=crop&w=480&q=70"
+    if "theatre" in text or "theater" in text or "opera" in text or "oper" in text or "concert" in text or "konzert" in text:
+        return "https://images.unsplash.com/photo-1507676184212-d03ab07a01bf?auto=format&fit=crop&w=480&q=70"
+    if "library" in text or "bibliothek" in text or "bücherei" in text:
+        return "https://images.unsplash.com/photo-1521587760476-6c12a4b040da?auto=format&fit=crop&w=480&q=70"
+    if "stadium" in text or "arena" in text or "stadion" in text:
+        return "https://images.unsplash.com/photo-1552667466-07770ae110d0?auto=format&fit=crop&w=480&q=70"
+    if "restaurant" in text or "gastronomie" in text or "pizzeria" in text or "cafe" in text or "gasthaus" in text or "wirtshaus" in text or "tavern" in text or "pub" in text:
         return "https://images.unsplash.com/photo-1514933651103-005eec06c04b?auto=format&fit=crop&w=480&q=70"
-    if "museum" in text or "historic" in text or "memorial" in text or "historisch" in text or "denkmal" in text:
+    if "museum" in text or "memorial" in text or "historisch" in text or "denkmal" in text or "monument" in text or "exhibition" in text or "ausstellung" in text:
         return "https://images.unsplash.com/photo-1566127444979-b3d2b654e3d7?auto=format&fit=crop&w=480&q=70"
-    if "hall" in text or "square" in text or "civic" in text or "rathaus" in text or "gemeinde" in text or "platz" in text:
+    if "historic" in text or "heritage" in text or "altstadt" in text or "old town" in text:
+        return "https://images.unsplash.com/photo-1566127444979-b3d2b654e3d7?auto=format&fit=crop&w=480&q=70"
+    if "hall" in text or "square" in text or "civic" in text or "rathaus" in text or "gemeinde" in text or "platz" in text or "town hall" in text:
         return "https://images.unsplash.com/photo-1511818966892-d7d671e672a2?auto=format&fit=crop&w=480&q=70"
-    if "art" in text or "sculpture" in text:
+    if "art" in text or "sculpture" in text or "skulptur" in text or "statue" in text or "gallery" in text or "galerie" in text:
         return "https://images.unsplash.com/photo-1547891654-e66ed7ebb968?auto=format&fit=crop&w=480&q=70"
     return "https://images.unsplash.com/photo-1473959383416-7d6c84d75c0e?auto=format&fit=crop&w=480&q=70"
 
 
 async def enrich_poi(settings: Settings, poi: PoiSummary, language: str) -> PoiSummary:
-    query = f'"{poi.name}" {poi.category} travel guide'
+    # Use a focused query — quoted name + "photo" yields specific, photographic results
+    strict_query = f'"{poi.name}" photo'
+    broad_query = f'{poi.name} {poi.category}'
     try:
-        web = await brave_search(settings, query)
-        try:
-            images = await brave_search(settings, query, image=True)
-        except Exception:
-            images = {}
-        results = web.get("web", {}).get("results", [])[:5]
-        image_results = images.get("results", [])[:5]
+        web = await brave_search(settings, f'"{poi.name}" {poi.category}')
+        # Pass 1: strict quoted query, 10 results
         image_url = None
-        for item in image_results:
-            candidate_url = _image_result_url(item)
-            if candidate_url and _is_plausible_image_result(item, poi):
-                image_url = candidate_url
-                break
+        try:
+            images = await brave_search(settings, strict_query, image=True, count=10)
+            image_url = await _pick_best_image(images.get("results", []), poi)
+        except Exception:
+            pass
+        # Pass 2: broader unquoted query if pass 1 found nothing
+        if not image_url:
+            try:
+                images2 = await brave_search(settings, broad_query, image=True, count=10)
+                image_url = await _pick_best_image(images2.get("results", []), poi)
+            except Exception:
+                pass
+        # Pass 3: Wikipedia
         if not image_url:
             try:
                 image_url = await wikipedia_image(poi.name, language)
             except Exception:
                 image_url = None
-        snippets = [{"title": r.get("title"), "description": r.get("description"), "url": r.get("url")} for r in results]
+        snippets = [{"title": r.get("title"), "description": r.get("description"), "url": r.get("url")} for r in web.get("web", {}).get("results", [])[:5]]
         prompt = render_prompt(
             "poi_enrich_user.txt",
             language=language,

@@ -7,15 +7,91 @@ export type StoredPoi = PoiSummary & {
   detailText?: string
 }
 
+export type CachedScan = {
+  locationKey: string
+  pois: PoiSummary[]
+  cachedAt: number
+}
+
+export type CachedDetail = {
+  /** Composite key: "<poiId>|<language>" */
+  key: string
+  poiId: string
+  language: string
+  detailText: string
+  cachedAt: number
+}
+
 export const db = new Dexie('travelguide') as Dexie & {
   savedPois: EntityTable<StoredPoi, 'id'>
   achievements: EntityTable<Achievement, 'id'>
+  poiCache: EntityTable<CachedScan, 'locationKey'>
+  poiDetailCache: EntityTable<CachedDetail, 'key'>
 }
 
 db.version(1).stores({
   savedPois: 'id, savedAt, visitedAt',
   achievements: 'id, unlockedAt, relatedPoiId'
 })
+
+db.version(2).stores({
+  savedPois: 'id, savedAt, visitedAt',
+  achievements: 'id, unlockedAt, relatedPoiId',
+  poiCache: 'locationKey, cachedAt',
+  poiDetailCache: 'key, poiId, language, cachedAt'
+})
+
+// ---------------------------------------------------------------------------
+// Geo rounding helpers
+// ---------------------------------------------------------------------------
+
+/** Round to 3 decimal places (~111 m grid). */
+export function roundGeo(lat: number, lng: number): string {
+  return `${lat.toFixed(3)},${lng.toFixed(3)}`
+}
+
+// ---------------------------------------------------------------------------
+// Scan cache helpers
+// ---------------------------------------------------------------------------
+
+export async function getCachedScan(lat: number, lng: number): Promise<CachedScan | undefined> {
+  return db.poiCache.get(roundGeo(lat, lng))
+}
+
+export async function putCachedScan(lat: number, lng: number, pois: PoiSummary[]): Promise<void> {
+  await db.poiCache.put({ locationKey: roundGeo(lat, lng), pois, cachedAt: Date.now() })
+}
+
+export async function clearCachedScan(lat: number, lng: number): Promise<void> {
+  await db.poiCache.delete(roundGeo(lat, lng))
+}
+
+// ---------------------------------------------------------------------------
+// Detail text cache helpers
+// ---------------------------------------------------------------------------
+
+function detailKey(poiId: string, language: string): string {
+  return `${poiId}|${language}`
+}
+
+export async function getCachedDetail(poiId: string, language: string): Promise<string | undefined> {
+  const entry = await db.poiDetailCache.get(detailKey(poiId, language))
+  return entry?.detailText
+}
+
+export async function putCachedDetail(poiId: string, language: string, detailText: string): Promise<void> {
+  await db.poiDetailCache.put({
+    key: detailKey(poiId, language),
+    poiId,
+    language,
+    detailText,
+    cachedAt: Date.now()
+  })
+}
+
+// ---------------------------------------------------------------------------
+// Saved POI helpers
+// ---------------------------------------------------------------------------
 
 export async function savePoi(poi: PoiSummary) {
   await db.savedPois.put({ ...poi, savedAt: Date.now() })
@@ -26,6 +102,10 @@ export async function savePoi(poi: PoiSummary) {
     unlockedAt: Date.now(),
     relatedPoiId: poi.id
   })
+}
+
+export async function updatePoiDetailText(poiId: string, detailText: string): Promise<void> {
+  await db.savedPois.where('id').equals(poiId).modify({ detailText })
 }
 
 export async function markVisited(poi: PoiSummary) {
@@ -48,4 +128,3 @@ export async function unlockAchievement(achievement: Achievement) {
 export async function deletePoi(poiId: string) {
   await db.savedPois.delete(poiId)
 }
-

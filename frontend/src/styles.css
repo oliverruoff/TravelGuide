@@ -887,6 +887,8 @@ input, select {
   min-height: 560px;
   position: relative;
   filter: drop-shadow(0 22px 54px var(--deep-shadow));
+  perspective: 900px;
+  perspective-origin: 50% 40%;
 }
 
 /* Outer card shell — thin border, rounded */

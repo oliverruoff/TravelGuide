@@ -3,7 +3,6 @@ import type { PoiSummary, RawGeoCandidate } from './types'
 export type RuntimeConfig = {
   configured: boolean
   language: string
-  ttsProvider: 'browser' | 'minimax'
 }
 
 export async function getRuntimeConfig(): Promise<RuntimeConfig> {
@@ -46,7 +45,8 @@ export async function streamDetail(
   poi: PoiSummary,
   language: string,
   onChunk: (chunk: string) => void,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  onDone?: () => void
 ) {
   const response = await fetch('/api/poi/detail/stream', {
     method: 'POST',
@@ -67,28 +67,15 @@ export async function streamDetail(
     buffer = events.pop() ?? ''
     for (const event of events) {
       for (const line of event.split('\n')) {
-        if (line.startsWith('data: ') && line !== 'data: done') {
+        if (line === 'data: done') {
+          onDone?.()
+        } else if (line.startsWith('data: ')) {
           onChunk(line.slice(6))
         }
       }
     }
   }
+  // Fallback: if the stream ends without a `data: done` event, still fire onDone
+  onDone?.()
 }
 
-export async function synthesizeSpeech(text: string, language: string): Promise<Blob> {
-  const response = await fetch('/api/audio/tts', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ text, language })
-  })
-  if (!response.ok) {
-    const errorText = await response.text()
-    try {
-      const errorJson = JSON.parse(errorText) as { detail?: string }
-      throw new Error(errorJson.detail || 'Could not generate audio')
-    } catch {
-      throw new Error(errorText || 'Could not generate audio')
-    }
-  }
-  return response.blob()
-}
