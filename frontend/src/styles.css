@@ -390,11 +390,21 @@ input, select {
   display: grid;
   place-items: center;
   background: transparent;
-  color: var(--control-fg);
+  color: #211d1a;
   box-shadow: none;
   cursor: pointer;
   transition: color 0.15s, opacity 0.15s;
   opacity: 0.6;
+}
+.icon:hover {
+  opacity: 1;
+}
+.icon.active {
+  background: var(--accent);
+  color: #fffaf5;
+}
+.app-shell.dark .icon {
+  color: #f8f3ed;
 }
 .icon:hover {
   opacity: 1;
@@ -574,7 +584,7 @@ input, select {
   align-items: center;
   gap: 5px;
   background: transparent;
-  color: var(--control-fg);
+  color: #211d1a;
   box-shadow: none;
   font-size: 12px;
   font-weight: 900;
@@ -584,6 +594,9 @@ input, select {
 }
 .card-detail-button:hover {
   opacity: 1;
+}
+.app-shell.dark .card-detail-button {
+  color: #f8f3ed;
 }
 
 .card-refresh-button {
@@ -1232,7 +1245,7 @@ input, select {
   border-radius: 12px;
   border: 0;
   background: transparent;
-  color: var(--ink);
+  color: #211d1a;
   font-size: 12px;
   font-weight: 900;
   letter-spacing: 0;
@@ -1243,12 +1256,18 @@ input, select {
 .mtg-btn:hover {
   background: transparent;
   border-color: transparent;
-  color: var(--ink);
+  color: #211d1a;
   transform: none;
   box-shadow: none;
   opacity: 1;
 }
 .mtg-btn:active { transform: scale(0.98); }
+.app-shell.dark .mtg-btn {
+  color: #f8f3ed;
+}
+.app-shell.dark .mtg-btn:hover {
+  color: #f8f3ed;
+}
 
 /* Power / Toughness badge */
 .mtg-pt-box {
