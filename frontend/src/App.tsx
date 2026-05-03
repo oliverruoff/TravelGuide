@@ -13,6 +13,21 @@ const poiSearchRadiusMeters = 500
 const maxPoiListItems = 50
 const movingRefreshDistanceMeters = 140
 
+function getCategoryColorClass(category: string): string {
+  const lower = (category || '').toLowerCase()
+  if (lower.includes('museum')) return 'cat-museum'
+  if (lower.includes('church') || lower.includes('kirche') || lower.includes('chapel')) return 'cat-religious'
+  if (lower.includes('monument') || lower.includes('memorial') || lower.includes('denkmal')) return 'cat-monument'
+  if (lower.includes('castle') || lower.includes('burg') || lower.includes('schloss') || lower.includes('palace')) return 'cat-castle'
+  if (lower.includes('viewpoint') || lower.includes('aussicht')) return 'cat-viewpoint'
+  if (lower.includes('restaurant') || lower.includes('cafe') || lower.includes('bar')) return 'cat-dining'
+  if (lower.includes('trail') || lower.includes('radweg') || lower.includes('path')) return 'cat-trail'
+  if (lower.includes('river') || lower.includes('lake') || lower.includes('water') || lower.includes('fluss') || lower.includes('see')) return 'cat-water'
+  if (lower.includes('artwork') || lower.includes('sculpture') || lower.includes('galerie') || lower.includes('gallery')) return 'cat-art'
+  if (lower.includes('park') || lower.includes('garden') || lower.includes('garten') || lower.includes('nature')) return 'cat-nature'
+  return 'cat-default'
+}
+
 function distanceMeters(a: GeoFix, b: GeoFix) {
   const radius = 6371000
   const lat1 = a.latitude * Math.PI / 180
@@ -545,7 +560,7 @@ function PoiCard({
         <PoiVisual poi={poi} loading={imageLoading} />
       </div>
       <div className="poi-copy">
-        <span>{poi.category}</span>
+        <span className={getCategoryColorClass(poi.category)}>{poi.category}</span>
         <strong>{poi.name}</strong>
         <p>{cleanOneLiner(poi.oneLiner)}</p>
       </div>
