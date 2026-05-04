@@ -641,9 +641,10 @@ input, select {
 }
 
 .filter-popover {
-  position: absolute;
-  top: calc(100% + 8px);
-  right: -51px;
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
   width: min(318px, calc(100vw - 28px));
   max-height: min(460px, 72vh);
   overflow-y: auto;
