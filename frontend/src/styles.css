@@ -400,6 +400,74 @@ input, select {
 .toolbar > div:first-child {
   min-width: 0;
 }
+
+/* Language picker */
+.lang-picker {
+  position: relative;
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+}
+.lang-trigger {
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  cursor: pointer;
+  font-family: 'Roboto', sans-serif;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: lowercase;
+  color: #211d1a;
+  opacity: 0.6;
+  transition: opacity 0.15s;
+  line-height: 1;
+}
+.lang-trigger:hover {
+  opacity: 1;
+}
+.app-shell.dark .lang-trigger {
+  color: #f8f3ed;
+}
+.lang-dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  background: var(--surface);
+  border-radius: 10px;
+  padding: 5px;
+  box-shadow: 0 4px 20px var(--shadow);
+  z-index: 200;
+  min-width: 42px;
+}
+.lang-option {
+  background: none;
+  border: none;
+  padding: 6px 8px;
+  cursor: pointer;
+  font-family: 'Roboto', sans-serif;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: lowercase;
+  color: #211d1a;
+  opacity: 0.55;
+  border-radius: 7px;
+  transition: opacity 0.12s, background 0.12s;
+  text-align: center;
+}
+.lang-option:hover {
+  opacity: 1;
+  background: var(--surface-strong);
+}
+.app-shell.dark .lang-option {
+  color: #f8f3ed;
+}
 .toolbar span, .category { display: block; color: var(--soft-muted); font-size: 12px; font-weight: 900; text-transform: uppercase; }
 .toolbar strong {
   display: block;

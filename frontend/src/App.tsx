@@ -967,6 +967,39 @@ function SavedDrawer({ onClose, onOpenGuide }: { onClose: () => void; onOpenGuid
   )
 }
 
+const LANGUAGES = ['en', 'de', 'es', 'fr'] as const
+
+function LanguagePicker({ language, onChange }: { language: string; onChange: (lang: string) => void }) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!open) return
+    function handleClick(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', handleClick)
+    return () => document.removeEventListener('mousedown', handleClick)
+  }, [open])
+
+  return (
+    <div className="lang-picker" ref={ref}>
+      <button className="lang-trigger" onClick={() => setOpen((o) => !o)} aria-label="Language">
+        {language}
+      </button>
+      {open && (
+        <div className="lang-dropdown">
+          {LANGUAGES.filter((l) => l !== language).map((l) => (
+            <button key={l} className="lang-option" onClick={() => { onChange(l); setOpen(false) }}>
+              {l}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function MainExperience() {
   const { geo, setGeo, pois, setPois, activePoi, setActivePoi, language, setLanguage, savedOpen, setSavedOpen, theme } = useAppStore()
   const toggleTheme = useAppStore((state) => state.toggleTheme)
@@ -1218,17 +1251,7 @@ function MainExperience() {
             <span>Nearby</span>
             <strong>{status}</strong>
           </div>
-          <select
-            className="language-toggle"
-            value={language}
-            onChange={(e) => setLanguage(e.target.value)}
-            aria-label="Language"
-          >
-            <option value="en">EN</option>
-            <option value="de">DE</option>
-            <option value="es">ES</option>
-            <option value="fr">FR</option>
-          </select>
+          <LanguagePicker language={language} onChange={setLanguage} />
           <div className="location-control">
             <button className={`icon ${fakeLocationMode ? 'active' : ''}`} onClick={() => setLocationMenuOpen((open) => !open)} aria-label="Choose location mode"><LocateFixed size={19} /></button>
             <AnimatePresence>
