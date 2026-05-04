@@ -18,25 +18,25 @@ const CATEGORY_FILTER_GROUPS = [
   {
     title: 'Culture',
     items: [
-      { id: 'museum', label: 'Museums & arts', color: '#8B5CF6' },
-      { id: 'historic', label: 'Historic places', color: '#A78BFA' },
-      { id: 'religious', label: 'Sacred sites', color: '#EC4899' },
+      { id: 'museum', label: 'Museums & arts', color: '#8B5CF6', hint: 'Museums, galleries, libraries, archives, exhibitions, artworks, sculptures, theatres, cinemas, opera houses.' },
+      { id: 'historic', label: 'Historic places', color: '#A78BFA', hint: 'Historic sites, archaeological sites, monuments, memorials, ruins, castles, palaces, forts, towers, bridges, squares, cemeteries, heritage places.' },
+      { id: 'religious', label: 'Sacred sites', color: '#EC4899', hint: 'Churches, chapels, cathedrals, mosques, synagogues, temples, monasteries, abbeys, other places of worship.' },
     ],
   },
   {
     title: 'Outdoors',
     items: [
-      { id: 'nature', label: 'Parks & nature', color: '#22C55E' },
-      { id: 'water', label: 'Water', color: '#3B82F6' },
-      { id: 'viewpoint', label: 'Views', color: '#06B6D4' },
-      { id: 'trail', label: 'Trails', color: '#10B981' },
+      { id: 'nature', label: 'Parks & nature', color: '#22C55E', hint: 'Parks, gardens, forests, reserves, wildlife areas, botanical places, hills, mountains, peaks, summits.' },
+      { id: 'water', label: 'Water', color: '#3B82F6', hint: 'Rivers, lakes, streams, creeks, ponds, waterfalls, fountains, canals, harbours, marinas.' },
+      { id: 'viewpoint', label: 'Views', color: '#06B6D4', hint: 'Viewpoints, panoramas, lookouts, observatories, scenic views, miradors.' },
+      { id: 'trail', label: 'Trails', color: '#10B981', hint: 'Trails, paths, hiking routes, cycling routes, walking routes, footways.' },
     ],
   },
   {
     title: 'Local life',
     items: [
-      { id: 'food', label: 'Food & markets', color: '#84CC16' },
-      { id: 'civic', label: 'Civic & info', color: '#F59E0B' },
+      { id: 'food', label: 'Food & markets', color: '#84CC16', hint: 'Restaurants, cafes, bars, pubs, breweries, wineries, bistros, food shops, markets.' },
+      { id: 'civic', label: 'Civic & info', color: '#F59E0B', hint: 'Town halls, public buildings, community places, information boards, maps, village/local place markers.' },
     ],
   },
 ] as const
@@ -46,7 +46,7 @@ const ALL_CATEGORY_FILTERS = CATEGORY_FILTER_GROUPS.flatMap((group) => group.ite
 
 const CATEGORY_FILTER_KEYWORDS: Record<CategoryFilterId, string[]> = {
   museum: ['museum', 'library', 'archive', 'gallery', 'galerie', 'artwork', 'sculpture', 'theatre', 'theater', 'cinema', 'opera', 'arts', 'kunst', 'arte', 'art'],
-  historic: ['historic', 'historisch', 'historique', 'histórico', 'monument', 'memorial', 'denkmal', 'ruin', 'tower', 'bridge', 'square', 'cemetery', 'graveyard', 'castle', 'burg', 'schloss', 'palace', 'fort', 'heritage'],
+  historic: ['historic', 'historisch', 'historique', 'histórico', 'archaeological', 'archaeology', 'archaeological_site', 'archeological', 'archeology', 'monument', 'memorial', 'denkmal', 'ruin', 'tower', 'bridge', 'square', 'cemetery', 'graveyard', 'castle', 'burg', 'schloss', 'palace', 'fort', 'heritage'],
   religious: ['church', 'kirche', 'chapel', 'cathedral', 'mosque', 'synagogue', 'temple', 'sacred', 'religious', 'monastery', 'abbey', 'église', 'iglesia'],
   nature: ['park', 'garden', 'garten', 'nature', 'natural', 'forest', 'reserve', 'wildlife', 'botanical', 'hill', 'mountain', 'peak', 'summit', 'jardin', 'parque'],
   water: ['river', 'lake', 'water', 'fluss', 'see', 'stream', 'creek', 'pond', 'waterfall', 'fountain', 'canal', 'harbour', 'harbor', 'marina', 'rivière', 'lac', 'agua'],
@@ -1258,8 +1258,19 @@ function CategoryFilterModal({
                     checked={selectedSet.has(item.id)}
                     onChange={() => toggleFilter(item.id)}
                   />
-                  <span aria-hidden="true" />
-                  {item.label}
+                  <span className="filter-check" aria-hidden="true" />
+                  <span className="filter-option-label">{item.label}</span>
+                  <span
+                    className="filter-info"
+                    title={item.hint}
+                    data-tooltip={item.hint}
+                    tabIndex={0}
+                    onClick={(event) => event.preventDefault()}
+                    onPointerDown={(event) => event.stopPropagation()}
+                    aria-label={`${item.label}: ${item.hint}`}
+                  >
+                    <Info size={11} />
+                  </span>
                 </label>
               ))}
             </div>

@@ -180,7 +180,7 @@ def travel_candidate_count(candidates: list[RawGeoCandidate]) -> int:
 
 CATEGORY_FILTER_KEYWORDS: dict[str, tuple[str, ...]] = {
     "museum": ("museum", "gallery", "galerie", "archive", "library", "exhibition", "artwork", "sculpture", "theatre", "theater", "cinema", "opera"),
-    "historic": ("historic", "monument", "memorial", "ruin", "castle", "palace", "fort", "tower", "bridge", "square", "cemetery", "heritage"),
+    "historic": ("historic", "archaeological", "archaeology", "archaeological_site", "archeological", "archeology", "monument", "memorial", "ruin", "castle", "palace", "fort", "tower", "bridge", "square", "cemetery", "heritage"),
     "religious": ("church", "chapel", "cathedral", "mosque", "synagogue", "temple", "place_of_worship", "religion", "denomination", "monastery", "abbey"),
     "nature": ("park", "garden", "forest", "nature", "natural", "reserve", "wildlife", "botanical", "wood", "meadow", "peak", "hill", "mountain"),
     "water": ("river", "lake", "water", "waterway", "stream", "creek", "pond", "waterfall", "fountain", "canal", "harbour", "harbor", "marina"),
