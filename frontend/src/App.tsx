@@ -1225,32 +1225,35 @@ function CategoryFilterPicker({
         <Filter size={18} />
       </button>
       {open && (
-        <div className="filter-popover">
-          <div className="filter-popover-head">
-            <strong>Categories</strong>
-            <button onClick={() => setFilters(allSelected ? [] : ALL_CATEGORY_FILTERS)}>
-              {allSelected ? 'Clear' : 'All'}
-            </button>
+        <>
+          <button className="filter-backdrop" onClick={() => setOpen(false)} aria-label="Close category filters" />
+          <div className="filter-popover">
+            <div className="filter-popover-head">
+              <strong>Categories</strong>
+              <button onClick={() => setFilters(allSelected ? [] : ALL_CATEGORY_FILTERS)}>
+                {allSelected ? 'Clear' : 'All'}
+              </button>
+            </div>
+            {CATEGORY_FILTER_GROUPS.map((group) => (
+              <section key={group.title} className="filter-group">
+                <p>{group.title}</p>
+                <div className="filter-options">
+                  {group.items.map((item) => (
+                    <label key={item.id} className="filter-option" style={{ '--filter-color': item.color } as React.CSSProperties}>
+                      <input
+                        type="checkbox"
+                        checked={selectedSet.has(item.id)}
+                        onChange={() => toggleFilter(item.id)}
+                      />
+                      <span aria-hidden="true" />
+                      {item.label}
+                    </label>
+                  ))}
+                </div>
+              </section>
+            ))}
           </div>
-          {CATEGORY_FILTER_GROUPS.map((group) => (
-            <section key={group.title} className="filter-group">
-              <p>{group.title}</p>
-              <div className="filter-options">
-                {group.items.map((item) => (
-                  <label key={item.id} className="filter-option" style={{ '--filter-color': item.color } as React.CSSProperties}>
-                    <input
-                      type="checkbox"
-                      checked={selectedSet.has(item.id)}
-                      onChange={() => toggleFilter(item.id)}
-                    />
-                    <span aria-hidden="true" />
-                    {item.label}
-                  </label>
-                ))}
-              </div>
-            </section>
-          ))}
-        </div>
+        </>
       )}
     </div>
   )
