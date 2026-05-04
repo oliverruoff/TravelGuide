@@ -230,9 +230,9 @@ input, select {
   border-radius: 14px;
   display: grid;
   place-items: center;
-  color: var(--control-fg);
-  background: var(--control-bg);
-  box-shadow: 0 14px 26px var(--shadow), inset 0 1px 0 rgba(255,255,255,0.16);
+  color: var(--ink);
+  background: var(--surface);
+  box-shadow: 0 10px 24px var(--shadow);
   z-index: 5;
 }
 .recenter-button:active {
