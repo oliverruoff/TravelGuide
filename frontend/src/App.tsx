@@ -560,9 +560,10 @@ function MapPanel({
         {locationInfoOpen && (
           <motion.div
             className="location-info-card"
-            initial={{ opacity: 0, y: 8, scale: 0.97 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 8, scale: 0.97 }}
+            style={{ x: '-50%', y: '-50%' }}
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.95 }}
             transition={{ duration: 0.18 }}
           >
             <button className="location-info-close" onClick={onLocationInfoClose} aria-label="Close info"><X size={13} /></button>
