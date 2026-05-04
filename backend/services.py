@@ -362,6 +362,16 @@ async def brave_search(settings: Settings, query: str, image: bool = False, coun
         return response.json()
 
 
+def _result_mentions_city(result: dict[str, Any], city: str) -> bool:
+    """Return True iff the city name appears anywhere in the result's title, URL, or description."""
+    city_lower = city.lower()
+    haystack = " ".join(
+        str(result.get(field) or "")
+        for field in ("title", "url", "description")
+    ).lower()
+    return city_lower in haystack
+
+
 def _dedupe_sources(results: list[dict[str, Any]], limit: int = 8) -> list[dict[str, Any]]:
     seen: set[str] = set()
     deduped: list[dict[str, Any]] = []
@@ -386,17 +396,18 @@ def _strip_markup(text: str) -> str:
 def _detail_queries(poi: PoiSummary, language: str = "en", city: str | None = None) -> list[str]:
     name = poi.name.strip()
     compact_name = " ".join(token for token in re.split(r"\s+", name) if token)
-    city_suffix = f" {city}" if city else ""
+    # Quote the city so Brave treats it as a required phrase, not a soft signal
+    city_part = f' "{city}"' if city else ""
     if language.startswith("de"):
         return [
-            f'"{compact_name}"{city_suffix}',
-            f'"{compact_name}" Geschichte{city_suffix}',
-            f'"{compact_name}" Sehenswürdigkeit{city_suffix}',
+            f'"{compact_name}"{city_part}',
+            f'"{compact_name}"{city_part} Geschichte',
+            f'"{compact_name}"{city_part} Sehenswürdigkeit',
         ]
     return [
-        f'"{compact_name}"{city_suffix}',
-        f'"{compact_name}" history{city_suffix}',
-        f'"{compact_name}" attraction visit{city_suffix}',
+        f'"{compact_name}"{city_part}',
+        f'"{compact_name}"{city_part} history',
+        f'"{compact_name}"{city_part} attraction visit',
     ]
 
 
@@ -407,7 +418,10 @@ async def detail_sources(settings: Settings, poi: PoiSummary, language: str = "e
             web = await brave_search(settings, query)
         except Exception:
             continue
-        collected.extend(web.get("web", {}).get("results", [])[:4])
+        results = web.get("web", {}).get("results", [])[:4]
+        if city:
+            results = [r for r in results if _result_mentions_city(r, city)]
+        collected.extend(results)
     return _dedupe_sources(collected)
 
 
@@ -609,7 +623,10 @@ async def enrich_poi(settings: Settings, poi: PoiSummary, language: str) -> PoiS
                 image_url = await wikipedia_image(poi.name, language, city=city)
             except Exception:
                 image_url = None
-        snippets = [{"title": r.get("title"), "description": r.get("description"), "url": r.get("url")} for r in web.get("web", {}).get("results", [])[:5]]
+        web_results = web.get("web", {}).get("results", [])[:5]
+        if city:
+            web_results = [r for r in web_results if _result_mentions_city(r, city)]
+        snippets = [{"title": r.get("title"), "description": r.get("description"), "url": r.get("url")} for r in web_results]
         prompt = render_prompt(
             "poi_enrich_user.txt",
             language=language,
