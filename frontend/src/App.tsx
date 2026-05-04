@@ -482,8 +482,11 @@ function MapPanel({
             <circle cx="16" cy="16" r="5.2" />
           </svg>
         </span>
-        <span>${poi.name.slice(0, 18)}</span>
       `
+      const label = document.createElement('span')
+      label.className = 'poi-pin-label'
+      label.textContent = poi.name
+      node.appendChild(label)
       const openMarkerPoi = (event: MouseEvent | PointerEvent | TouchEvent) => {
         event.preventDefault()
         event.stopPropagation()
@@ -495,6 +498,13 @@ function MapPanel({
       node.addEventListener('touchend', openMarkerPoi)
       anchor.appendChild(node)
       const marker = new maplibregl.Marker({ element: anchor, anchor: 'center', offset: [0, 0] }).setLngLat([poi.lng, poi.lat]).addTo(mapRef.current!)
+      window.requestAnimationFrame(() => {
+        const overflow = label.scrollWidth - label.clientWidth
+        if (overflow > 2) {
+          label.style.setProperty('--label-overflow', `${overflow}px`)
+          label.classList.add('scrolling')
+        }
+      })
       markers.current.push(marker)
       markerNodes.current.set(poi.id, node)
     })

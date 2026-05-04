@@ -464,7 +464,9 @@ input, select {
 .poi-pin circle {
   fill: #fff;
 }
-.poi-pin span {
+.poi-pin-label {
+  --label-overflow: 0px;
+  display: block;
   min-width: 0;
   padding: 0 15px 0 3px;
   color: #111816;
@@ -475,6 +477,20 @@ input, select {
   white-space: nowrap;
   pointer-events: none;
 }
+
+.poi-pin-label.scrolling {
+  animation: poiLabelScroll 9s ease-in-out 1.2s infinite alternate;
+}
+
+@keyframes poiLabelScroll {
+  0%, 18% {
+    transform: translateX(0);
+  }
+  82%, 100% {
+    transform: translateX(calc(-1 * var(--label-overflow)));
+  }
+}
+
 .poi-pin.active {
   background:
     linear-gradient(180deg, rgba(255,255,255,0.96), rgba(255,255,255,0.8)),
@@ -485,7 +501,7 @@ input, select {
 .poi-pin.active path {
   fill: color-mix(in srgb, var(--pin-color) 88%, #111816);
 }
-.poi-pin.active span {
+.poi-pin.active .poi-pin-label {
   color: color-mix(in srgb, var(--pin-color) 54%, #111816);
 }
 
