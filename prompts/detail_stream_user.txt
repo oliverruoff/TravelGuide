@@ -8,6 +8,7 @@ Never claim what a sign, board, church, monument, or building explains/contains 
 Do not invent ages, founders, 'oldest' claims, regions, wineries, generations, awards, or official status.
 If sources are thin, focus on observable local context instead of inventing specifics, but still write like a human guide.
 Avoid unsupported claims. Length: 3-5 short paragraphs.
+Format your response in Markdown: use ## for section headings, **bold** for important terms and the place name, and - bullet points for tips or practical info. Keep it minimal — not every paragraph needs a heading.
 
 POI:
 {poi_json}

@@ -13,6 +13,54 @@ const poiSearchRadiusMeters = 500
 const maxPoiListItems = 50
 const movingRefreshDistanceMeters = 140
 
+// Lightweight markdown renderer — supports ##/### headings, **bold**, - bullets, paragraphs
+function SimpleMarkdown({ text }: { text: string }) {
+  const lines = text.split('\n')
+  const elements: React.ReactNode[] = []
+  let listItems: React.ReactNode[] = []
+  let key = 0
+
+  function flushList() {
+    if (listItems.length > 0) {
+      elements.push(<ul key={key++}>{listItems}</ul>)
+      listItems = []
+    }
+  }
+
+  function renderInline(raw: string): React.ReactNode[] {
+    // Split on **bold** markers
+    const parts = raw.split(/(\*\*[^*]+\*\*)/)
+    return parts.map((part, i) => {
+      if (part.startsWith('**') && part.endsWith('**')) {
+        return <strong key={i}>{part.slice(2, -2)}</strong>
+      }
+      return part
+    })
+  }
+
+  for (const line of lines) {
+    const trimmed = line.trim()
+
+    if (trimmed.startsWith('### ')) {
+      flushList()
+      elements.push(<h3 key={key++}>{renderInline(trimmed.slice(4))}</h3>)
+    } else if (trimmed.startsWith('## ')) {
+      flushList()
+      elements.push(<h2 key={key++}>{renderInline(trimmed.slice(3))}</h2>)
+    } else if (trimmed.startsWith('- ') || trimmed.startsWith('* ')) {
+      listItems.push(<li key={key++}>{renderInline(trimmed.slice(2))}</li>)
+    } else if (trimmed === '') {
+      flushList()
+    } else {
+      flushList()
+      elements.push(<p key={key++}>{renderInline(trimmed)}</p>)
+    }
+  }
+  flushList()
+
+  return <>{elements}</>
+}
+
 function getCategoryColorClass(category: string): string {
   const lower = (category || '').toLowerCase()
   if (lower.includes('museum')) return 'cat-museum'
@@ -831,15 +879,15 @@ function DetailCard({ poi, userGeo, onClose }: { poi: PoiSummary; userGeo?: GeoF
                   </div>
                 </div>
               ) : (
-                <motion.p
+                <motion.div
                   className="mtg-flavor"
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
                   transition={{ duration: 0.3 }}
                 >
-                  {displayedText}
+                  <SimpleMarkdown text={displayedText} />
                   {displayedText.length < text.length && <span className="typing-cursor" />}
-                </motion.p>
+                </motion.div>
               )}
 
               {!loading && text && poi.sourceRefs.length > 0 && (
@@ -926,7 +974,7 @@ function SavedDrawer({ onClose, onOpenGuide }: { onClose: () => void; onOpenGuid
     <>
       <motion.aside className="saved-drawer" initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }}>
         <button className="icon close" onClick={onClose} aria-label="Close"><X size={20} /></button>
-        <h2>Saved POIs</h2>
+        <h2>Deck of Cards</h2>
         {items.length === 0 ? (
           <p>No saved cards yet.</p>
         ) : (

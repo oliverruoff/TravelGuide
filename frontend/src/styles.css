@@ -1297,7 +1297,39 @@ input, select {
   font-size: 13.5px;
   line-height: 1.62;
   color: var(--ink);
-  white-space: pre-wrap;
+}
+
+/* Markdown elements inside the detail card text box */
+.mtg-flavor h2 {
+  font-size: 0.82rem;
+  font-weight: 700;
+  margin: 0.65em 0 0.2em;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--ink);
+}
+.mtg-flavor h3 {
+  font-size: 0.8rem;
+  font-weight: 600;
+  margin: 0.5em 0 0.15em;
+  color: var(--ink);
+}
+.mtg-flavor p {
+  margin: 0 0 0.5em;
+}
+.mtg-flavor p:last-child {
+  margin-bottom: 0;
+}
+.mtg-flavor strong {
+  font-weight: 700;
+}
+.mtg-flavor ul {
+  padding-left: 1.1em;
+  margin: 0.25em 0 0.5em;
+  list-style: disc;
+}
+.mtg-flavor li {
+  margin-bottom: 0.15em;
 }
 
 .mtg-textbox .guide-loading { min-height: 80px; }
