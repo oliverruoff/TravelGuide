@@ -699,12 +699,18 @@ input, select {
   flex: 1 1 auto;
   min-height: 0;
   overflow: auto;
-  padding: 3px 2px max(96px, calc(34px + env(safe-area-inset-bottom)));
+  padding: 3px 2px 0;
   scroll-padding-bottom: max(96px, calc(34px + env(safe-area-inset-bottom)));
   display: grid;
   gap: 12px;
   align-content: start;
   -webkit-overflow-scrolling: touch;
+}
+
+.poi-list::after {
+  content: "";
+  display: block;
+  height: max(96px, calc(34px + env(safe-area-inset-bottom)));
 }
 
 .poi-card {
