@@ -1130,7 +1130,13 @@ function MainExperience() {
 
   const selectedGeo = geo ?? fallbackBerlin
 
+  function setLocationSourceNow(source: 'gps' | 'demo' | 'fake') {
+    locationSourceRef.current = source
+    setLocationSource(source)
+  }
+
   function requestLocation() {
+    const replacingTeleport = locationSourceRef.current === 'fake'
     setFakeLocationMode(false)
     setLocationMenuOpen(false)
     localStorage.removeItem(savedFakeGeoKey)
@@ -1138,29 +1144,45 @@ function MainExperience() {
       navigator.geolocation?.clearWatch(watchIdRef.current)
       watchIdRef.current = undefined
     }
+    setLocationSourceNow('gps')
     setStatus('Requesting precise location...')
     if (!navigator.geolocation) {
       setGeo(fallbackBerlin)
-      setLocationSource('demo')
+      if (replacingTeleport) {
+        setPois([])
+        setActivePoi(undefined)
+        lastScanGeoRef.current = undefined
+      }
+      setLocationSourceNow('demo')
       setStatus('GPS unavailable. Showing Berlin demo area.')
       return
     }
     const watchId = navigator.geolocation.watchPosition(
       (position) => {
         if (locationSourceRef.current === 'fake') return
+        if (replacingTeleport) {
+          setPois([])
+          setActivePoi(undefined)
+          lastScanGeoRef.current = undefined
+        }
         setGeo({
           latitude: position.coords.latitude,
           longitude: position.coords.longitude,
           accuracyMeters: position.coords.accuracy,
           timestamp: position.timestamp
         })
-        setLocationSource('gps')
+        setLocationSourceNow('gps')
         setStatus('Location ready.')
       },
       () => {
         if (locationSourceRef.current === 'fake') return
+        if (replacingTeleport) {
+          setPois([])
+          setActivePoi(undefined)
+          lastScanGeoRef.current = undefined
+        }
         setGeo(fallbackBerlin)
-        setLocationSource('demo')
+        setLocationSourceNow('demo')
         setStatus('GPS denied. Showing Berlin demo area.')
       },
       { enableHighAccuracy: true, timeout: 9000, maximumAge: 15000 }
@@ -1185,7 +1207,7 @@ function MainExperience() {
   function pickFakeLocation(nextGeo: GeoFix) {
     localStorage.setItem(savedFakeGeoKey, JSON.stringify(nextGeo))
     setGeo(nextGeo)
-    setLocationSource('fake')
+    setLocationSourceNow('fake')
     setFakeLocationMode(false)
     setStatus(useAppStore.getState().pois.length === 0 ? 'Teleported. Scanning nearby POIs...' : 'Teleported. Checking for new POIs...')
   }
@@ -1200,7 +1222,7 @@ function MainExperience() {
     const savedFakeGeo = readSavedFakeGeo()
     if (savedFakeGeo) {
       setGeo(savedFakeGeo)
-      setLocationSource('fake')
+      setLocationSourceNow('fake')
       setStatus('Teleport location restored.')
       return
     }
