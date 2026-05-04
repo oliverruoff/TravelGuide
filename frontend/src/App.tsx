@@ -1218,6 +1218,7 @@ function CategoryFilterModal({
 }) {
   const selectedSet = useMemo(() => new Set(selected), [selected])
   const allSelected = selected.length === ALL_CATEGORY_FILTERS.length
+  const [openInfo, setOpenInfo] = useState<CategoryFilterId | null>(null)
 
   function setFilters(next: CategoryFilterId[]) {
     localStorage.setItem(categoryFilterStorageKey, JSON.stringify(next))
@@ -1252,26 +1253,27 @@ function CategoryFilterModal({
             <p>{group.title}</p>
             <div className="filter-options">
               {group.items.map((item) => (
-                <label key={item.id} className="filter-option" style={{ '--filter-color': item.color } as React.CSSProperties}>
-                  <input
-                    type="checkbox"
-                    checked={selectedSet.has(item.id)}
-                    onChange={() => toggleFilter(item.id)}
-                  />
-                  <span className="filter-check" aria-hidden="true" />
-                  <span className="filter-option-label">{item.label}</span>
-                  <span
+                <div key={item.id} className="filter-option-wrap" style={{ '--filter-color': item.color } as React.CSSProperties}>
+                  <label className="filter-option">
+                    <input
+                      type="checkbox"
+                      checked={selectedSet.has(item.id)}
+                      onChange={() => toggleFilter(item.id)}
+                    />
+                    <span className="filter-check" aria-hidden="true" />
+                    <span className="filter-option-label">{item.label}</span>
+                  </label>
+                  <button
                     className="filter-info"
-                    title={item.hint}
-                    data-tooltip={item.hint}
-                    tabIndex={0}
-                    onClick={(event) => event.preventDefault()}
-                    onPointerDown={(event) => event.stopPropagation()}
-                    aria-label={`${item.label}: ${item.hint}`}
+                    type="button"
+                    onClick={() => setOpenInfo((current) => current === item.id ? null : item.id)}
+                    aria-expanded={openInfo === item.id}
+                    aria-label={`Show included sub-categories for ${item.label}`}
                   >
                     <Info size={11} />
-                  </span>
-                </label>
+                  </button>
+                  {openInfo === item.id && <p className="filter-info-panel">{item.hint}</p>}
+                </div>
               ))}
             </div>
           </section>

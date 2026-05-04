@@ -713,25 +713,33 @@ input, select {
   gap: 8px;
 }
 
-.filter-option {
+.filter-option-wrap {
   --filter-color: var(--accent);
+  min-width: 0;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 28px;
+  align-items: center;
+  background: color-mix(in srgb, var(--filter-color) 8%, var(--surface));
+  color: var(--ink);
+  overflow: visible;
+}
+
+.filter-option {
   min-width: 0;
   min-height: 40px;
   margin: 0;
-  padding: 8px 9px;
-  border-radius: 12px;
-  border: 1px solid var(--line);
+  padding: 8px 0 8px 9px;
   display: flex;
   align-items: center;
   gap: 7px;
-  background: color-mix(in srgb, var(--filter-color) 8%, var(--surface));
   color: var(--ink);
   font-size: 12px;
   font-weight: 800;
   line-height: 1.15;
-  overflow: hidden;
+  overflow: visible;
   overflow-wrap: anywhere;
-  position: relative;
 }
 
 .filter-option input {
@@ -754,7 +762,7 @@ input, select {
   box-shadow: inset 0 0 0 3px var(--surface);
 }
 
-.filter-option:has(input:checked) {
+.filter-option-wrap:has(input:checked) {
   border-color: color-mix(in srgb, var(--filter-color) 52%, var(--line));
   background: color-mix(in srgb, var(--filter-color) 18%, var(--surface));
 }
@@ -765,42 +773,33 @@ input, select {
 }
 
 .filter-info {
-  width: 18px;
-  height: 18px;
+  width: 22px;
+  height: 22px;
   border-radius: 999px;
   display: grid;
   place-items: center;
-  flex: 0 0 auto;
+  justify-self: center;
+  border: 0;
+  padding: 0;
   color: var(--filter-color);
   background: color-mix(in srgb, var(--filter-color) 13%, transparent);
   outline: none;
 }
 
-.filter-info::after {
-  content: attr(data-tooltip);
-  position: absolute;
-  left: 50%;
-  bottom: calc(100% + 8px);
-  transform: translateX(-50%);
-  width: min(250px, calc(100vw - 64px));
-  padding: 9px 10px;
-  border-radius: 10px;
-  background: var(--control-bg);
-  color: var(--control-fg);
-  box-shadow: 0 12px 28px var(--deep-shadow);
+.filter-info[aria-expanded="true"] {
+  background: var(--filter-color);
+  color: #fffaf5;
+}
+
+.filter-info-panel {
+  grid-column: 1 / -1;
+  margin: 0;
+  padding: 0 10px 10px 33px;
+  color: var(--muted);
   font-size: 11px;
   font-weight: 800;
   line-height: 1.35;
   text-transform: none;
-  opacity: 0;
-  pointer-events: none;
-  z-index: 2;
-  white-space: normal;
-}
-
-.filter-info:hover::after,
-.filter-info:focus-visible::after {
-  opacity: 1;
 }
 
 .toolbar span, .category { display: block; color: var(--soft-muted); font-size: 12px; font-weight: 900; text-transform: uppercase; }
