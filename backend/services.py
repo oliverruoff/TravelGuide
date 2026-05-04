@@ -453,37 +453,107 @@ async def _reverse_geocode_city(lat: float, lng: float) -> str | None:
         return None
 
 
-async def wikipedia_image(query: str, language: str = "en", city: str | None = None) -> str | None:
+_WIKI_STOPWORDS = {
+    "the", "a", "an", "of", "at", "in", "on", "and", "or", "to", "by", "for",
+    "de", "der", "die", "das", "des", "dem", "den", "und", "im", "am", "vom",
+}
+
+
+def _wiki_title_matches_poi(poi_name: str, wiki_title: str) -> bool:
+    """Return True if enough significant words from poi_name appear in wiki_title.
+
+    Strategy: strip stopwords + short tokens from poi_name, then require at
+    least 60% of the remaining words to be present (substring) in the lowercased
+    wiki title. This handles plurals, ligatures, and minor spelling differences
+    while rejecting clearly unrelated articles.
+    """
+    significant = [
+        w for w in poi_name.lower().split()
+        if w not in _WIKI_STOPWORDS and len(w) > 2
+    ]
+    if not significant:
+        return False
+    title_lower = wiki_title.lower()
+    hits = sum(1 for w in significant if w in title_lower)
+    return hits / len(significant) >= 0.6
+
+
+async def wikipedia_data(
+    name: str,
+    city: str | None,
+    language: str,
+) -> dict[str, Any] | None:
+    """Search Wikipedia for a POI and return image URL + extract if confident.
+
+    Two-step: MediaWiki search to find the correct article title, then REST
+    summary API for the image thumbnail and plain-text extract. Applies two
+    confidence gates before trusting the result:
+      1. Title match: ≥60% of significant POI-name words appear in the article title.
+      2. City match (strict): if we know the city, the city name must appear in
+         the article title or its extract — prevents using articles about
+         same-named places in different cities.
+    Returns None on any failure or low-confidence match.
+    """
     lang = "de" if language.startswith("de") else "en"
     headers = {"User-Agent": "TravelGuideGenAI/0.1 (local prototype; olive@example.local)"}
+    search_query = f"{name} {city}" if city else name
 
-    async def _fetch_variant(client: httpx.AsyncClient, title: str) -> str | None:
-        try:
-            summary = await client.get(f"https://{lang}.wikipedia.org/api/rest_v1/page/summary/{quote(title)}")
-            if summary.status_code != 200:
+    try:
+        async with httpx.AsyncClient(timeout=8, headers=headers, follow_redirects=True) as client:
+            # Step 1: find article title via full-text search (no guessing variants)
+            search_resp = await client.get(
+                f"https://{lang}.wikipedia.org/w/api.php",
+                params={
+                    "action": "query",
+                    "list": "search",
+                    "srsearch": search_query,
+                    "srlimit": 2,
+                    "format": "json",
+                },
+            )
+            if search_resp.status_code != 200:
                 return None
-            data = summary.json()
-            return (data.get("thumbnail") or {}).get("source") or (data.get("originalimage") or {}).get("source")
-        except Exception:
-            return None
+            hits = search_resp.json().get("query", {}).get("search", [])
+            if not hits:
+                return None
 
-    async with httpx.AsyncClient(timeout=8, headers=headers, follow_redirects=True) as client:
-        # Build two batches: first try the most-likely variants in parallel,
-        # then fall back to city-qualified variants if needed.
-        primary = [query, query.replace(" ", "_")]
-        secondary = []
-        if city:
-            secondary.append(f"{query} {city}")
-            secondary.append(f"{query} {city}".replace(" ", "_"))
+            # Gate 1: title must match POI name with ≥60% significant-word overlap
+            title = None
+            for hit in hits:
+                if _wiki_title_matches_poi(name, hit["title"]):
+                    title = hit["title"]
+                    break
+            if not title:
+                return None
 
-        for batch in [primary, secondary]:
-            if not batch:
-                continue
-            results = await asyncio.gather(*[_fetch_variant(client, t) for t in batch])
-            found = next((r for r in results if r), None)
-            if found:
-                return found
-    return None
+            # Step 2: fetch summary for image + extract
+            summary_resp = await client.get(
+                f"https://{lang}.wikipedia.org/api/rest_v1/page/summary/{quote(title)}"
+            )
+            if summary_resp.status_code != 200:
+                return None
+            data = summary_resp.json()
+            extract = data.get("extract") or ""
+
+            # Gate 2 (strict): city must appear in title or extract
+            if city:
+                city_lower = city.lower()
+                if city_lower not in title.lower() and city_lower not in extract.lower():
+                    return None
+
+            image_url = (data.get("thumbnail") or {}).get("source")
+            wiki_url = (
+                data.get("content_urls", {}).get("mobile", {}).get("page")
+                or f"https://{lang}.wikipedia.org/wiki/{quote(title)}"
+            )
+            return {
+                "title": title,
+                "extract": extract,
+                "image_url": image_url,
+                "wiki_url": wiki_url,
+            }
+    except Exception:
+        return None
 
 
 IMAGE_STOPWORDS = {
@@ -617,62 +687,68 @@ async def enrich_poi(settings: Settings, poi: PoiSummary, language: str) -> PoiS
         return _enrich_cache[cache_key]
 
     try:
-        # Fire Nominatim + Brave web + Brave image pass 1 all at once
-        city_suffix_placeholder = ""
-        strict_query_initial = f'"{poi.name}" photo'
-        web_query_initial = f'"{poi.name}" {poi.category}'
+        # Always resolve city first — needed for Wikipedia confidence gate
+        city = await _reverse_geocode_city(poi.lat, poi.lng)
+        city_suffix = f" {city}" if city else ""
 
-        city, web, images = await asyncio.gather(
-            _reverse_geocode_city(poi.lat, poi.lng),
-            brave_search(settings, web_query_initial),
-            brave_search(settings, strict_query_initial, image=True, count=10),
-            return_exceptions=True,
+        # ── Wikipedia-first fast path ──────────────────────────────────────────
+        # Try Wikipedia before any Brave call. If we get a confident hit with a
+        # non-trivial extract we use it as the sole research source, skipping
+        # all Brave searches entirely.
+        wiki = await wikipedia_data(poi.name, city, language)
+        wiki_hit = (
+            wiki is not None
+            and len((wiki.get("extract") or "")) > 80  # require a meaningful extract
         )
 
-        # Normalize gather results (may be exceptions)
-        city = city if isinstance(city, str) else None
-        web = web if isinstance(web, dict) else {}
-        images = images if isinstance(images, dict) else {}
+        if wiki_hit:
+            image_url = wiki["image_url"]
+            snippets = [{
+                "title": wiki["title"],
+                "description": wiki["extract"],
+                "url": wiki["wiki_url"],
+            }]
+        else:
+            # ── Brave fallback ─────────────────────────────────────────────────
+            web_query = f'"{poi.name}" {poi.category}{city_suffix}'
+            strict_query = f'"{poi.name}"{city_suffix} photo'
+            broad_query = f'{poi.name} {poi.category}{city_suffix}'
 
-        city_suffix = f" {city}" if city else ""
-        strict_query = f'"{poi.name}"{city_suffix} photo'
-        broad_query = f'{poi.name} {poi.category}{city_suffix}'
+            web, images = await asyncio.gather(
+                brave_search(settings, web_query),
+                brave_search(settings, strict_query, image=True, count=10),
+                return_exceptions=True,
+            )
+            web = web if isinstance(web, dict) else {}
+            images = images if isinstance(images, dict) else {}
 
-        image_url = None
-        try:
-            image_url = await _pick_best_image(images.get("results", []), poi)
-        except Exception:
-            pass
-
-        # Pass 2: broader query (only if pass 1 failed)
-        if not image_url:
+            image_url = None
             try:
-                images2 = await brave_search(settings, broad_query, image=True, count=10)
-                image_url = await _pick_best_image(images2.get("results", []), poi)
+                image_url = await _pick_best_image(images.get("results", []), poi)
             except Exception:
                 pass
 
-        # Pass 3: Wikipedia (parallel variant lookup, only if still no image)
-        if not image_url:
-            try:
-                image_url = await wikipedia_image(poi.name, language, city=city)
-            except Exception:
-                image_url = None
+            if not image_url:
+                try:
+                    images2 = await brave_search(settings, broad_query, image=True, count=10)
+                    image_url = await _pick_best_image(images2.get("results", []), poi)
+                except Exception:
+                    pass
 
-        web_results = web.get("web", {}).get("results", [])[:5]
-        if city:
-            web_results = [r for r in web_results if _result_mentions_city(r, city)]
-        snippets = [{"title": r.get("title"), "description": r.get("description"), "url": r.get("url")} for r in web_results]
+            web_results = web.get("web", {}).get("results", [])[:5]
+            if city:
+                web_results = [r for r in web_results if _result_mentions_city(r, city)]
+            snippets = [{"title": r.get("title"), "description": r.get("description"), "url": r.get("url")} for r in web_results]
 
-        # Re-run web search with city if first pass had no city and returned no results
-        if not snippets and city:
-            try:
-                web2 = await brave_search(settings, f'"{poi.name}" {poi.category}{city_suffix}')
-                web_results2 = web2.get("web", {}).get("results", [])[:5]
-                snippets = [{"title": r.get("title"), "description": r.get("description"), "url": r.get("url")} for r in web_results2]
-            except Exception:
-                pass
+            if not snippets and city:
+                try:
+                    web2 = await brave_search(settings, f'"{poi.name}" {poi.category}{city_suffix}')
+                    web_results2 = web2.get("web", {}).get("results", [])[:5]
+                    snippets = [{"title": r.get("title"), "description": r.get("description"), "url": r.get("url")} for r in web_results2]
+                except Exception:
+                    pass
 
+        # ── LLM: derive category + oneLiner from whichever source we have ─────
         prompt = render_prompt(
             "poi_enrich_user.txt",
             language=language,
@@ -777,7 +853,29 @@ async def complete_detail_text(settings: Settings, poi: PoiSummary, sources: lis
 
 async def stream_detail(settings: Settings, poi: PoiSummary, language: str) -> AsyncIterator[str]:
     city = await _reverse_geocode_city(poi.lat, poi.lng)
-    sources = await detail_sources(settings, poi, language, city=city)
+
+    # Wikipedia-first: if we get a confident hit with a rich extract, use it
+    # directly and skip all Brave searches for the detail text too.
+    wiki = await wikipedia_data(poi.name, city, language)
+    wiki_extract_rich = wiki is not None and len((wiki.get("extract") or "")) > 200
+
+    if wiki_extract_rich:
+        sources = [{
+            "title": wiki["title"],
+            "description": wiki["extract"],
+            "url": wiki["wiki_url"],
+        }]
+    else:
+        # Fall back to 3 sequential Brave searches
+        sources = await detail_sources(settings, poi, language, city=city)
+        # If Brave returned nothing but Wikipedia had something (thin extract), add it
+        if not sources and wiki:
+            sources = [{
+                "title": wiki["title"],
+                "description": wiki.get("extract") or "",
+                "url": wiki["wiki_url"],
+            }]
+
     detail_text = await complete_detail_text(settings, poi, sources, language)
     for word in detail_text.split(" "):
         yield word + " "
