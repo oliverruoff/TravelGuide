@@ -63,16 +63,16 @@ function SimpleMarkdown({ text }: { text: string }) {
 
 function getCategoryColor(category: string): string {
   const lower = (category || '').toLowerCase()
-  if (lower.includes('museum')) return '#8B5CF6'
-  if (lower.includes('church') || lower.includes('kirche') || lower.includes('chapel')) return '#EC4899'
-  if (lower.includes('monument') || lower.includes('memorial') || lower.includes('denkmal')) return '#A78BFA'
-  if (lower.includes('castle') || lower.includes('burg') || lower.includes('schloss') || lower.includes('palace')) return '#F59E0B'
-  if (lower.includes('viewpoint') || lower.includes('aussicht')) return '#06B6D4'
-  if (lower.includes('restaurant') || lower.includes('cafe') || lower.includes('bar')) return '#84CC16'
-  if (lower.includes('trail') || lower.includes('radweg') || lower.includes('path')) return '#10B981'
-  if (lower.includes('river') || lower.includes('lake') || lower.includes('water') || lower.includes('fluss') || lower.includes('see')) return '#3B82F6'
-  if (lower.includes('artwork') || lower.includes('sculpture') || lower.includes('galerie') || lower.includes('gallery')) return '#D946EF'
-  if (lower.includes('park') || lower.includes('garden') || lower.includes('garten') || lower.includes('nature')) return '#22C55E'
+  if (lower.includes('museum') || lower.includes('library') || lower.includes('archive')) return '#8B5CF6'
+  if (lower.includes('church') || lower.includes('kirche') || lower.includes('chapel') || lower.includes('cathedral') || lower.includes('mosque') || lower.includes('synagogue') || lower.includes('temple')) return '#EC4899'
+  if (lower.includes('monument') || lower.includes('memorial') || lower.includes('denkmal') || lower.includes('historic') || lower.includes('ruin') || lower.includes('tower') || lower.includes('bridge') || lower.includes('square') || lower.includes('cemetery') || lower.includes('graveyard')) return '#A78BFA'
+  if (lower.includes('castle') || lower.includes('burg') || lower.includes('schloss') || lower.includes('palace') || lower.includes('fort')) return '#F59E0B'
+  if (lower.includes('viewpoint') || lower.includes('aussicht') || lower.includes('hill') || lower.includes('mountain') || lower.includes('peak') || lower.includes('summit') || lower.includes('observatory')) return '#06B6D4'
+  if (lower.includes('restaurant') || lower.includes('cafe') || lower.includes('bar') || lower.includes('pub') || lower.includes('brewery') || lower.includes('winery') || lower.includes('bistro') || lower.includes('shop') || lower.includes('market')) return '#84CC16'
+  if (lower.includes('trail') || lower.includes('radweg') || lower.includes('path') || lower.includes('hiking') || lower.includes('cycling')) return '#10B981'
+  if (lower.includes('river') || lower.includes('lake') || lower.includes('water') || lower.includes('fluss') || lower.includes('see') || lower.includes('stream') || lower.includes('creek') || lower.includes('pond') || lower.includes('waterfall') || lower.includes('fountain') || lower.includes('canal') || lower.includes('bay') || lower.includes('harbour') || lower.includes('harbor')) return '#3B82F6'
+  if (lower.includes('artwork') || lower.includes('sculpture') || lower.includes('galerie') || lower.includes('gallery') || lower.includes('theatre') || lower.includes('theater') || lower.includes('cinema') || lower.includes('opera')) return '#D946EF'
+  if (lower.includes('park') || lower.includes('garden') || lower.includes('garten') || lower.includes('nature') || lower.includes('forest') || lower.includes('reserve') || lower.includes('wildlife') || lower.includes('botanical')) return '#22C55E'
   return ''
 }
 

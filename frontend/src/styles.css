@@ -1099,11 +1099,11 @@ input, select {
   background:
     linear-gradient(145deg, color-mix(in srgb, var(--surface-strong) 92%, white), var(--surface)),
     var(--detail-bg);
-  border: 1px solid color-mix(in srgb, var(--cat-color, var(--accent)) 38%, transparent);
+  border: 1px solid var(--cat-color, var(--accent));
   box-shadow:
     0 0 0 1px rgba(255,255,255,0.24) inset,
     0 24px 64px var(--deep-shadow),
-    inset 0 0 0 3px color-mix(in srgb, var(--cat-color, var(--accent-soft)) 18%, transparent);
+    inset 0 0 0 3px color-mix(in srgb, var(--cat-color, var(--accent)) 35%, transparent);
   position: relative;
   overflow: hidden;
   height: 100%;
