@@ -1111,6 +1111,7 @@ function MainExperience() {
   const [imageLoadingIds, setImageLoadingIds] = useState<Set<string>>(new Set())
   const [locationMenuOpen, setLocationMenuOpen] = useState(false)
   const [locationInfoOpen, setLocationInfoOpen] = useState(false)
+  const [rescanConfirmOpen, setRescanConfirmOpen] = useState(false)
   const [fakeLocationMode, setFakeLocationMode] = useState(false)
   const [locationSource, setLocationSource] = useState<'gps' | 'demo' | 'fake'>(() => readSavedFakeGeo() ? 'fake' : 'demo')
   const locationSourceRef = useRef(locationSource)
@@ -1181,6 +1182,12 @@ function MainExperience() {
     setLocationSource('fake')
     setFakeLocationMode(false)
     setStatus(useAppStore.getState().pois.length === 0 ? 'Teleported. Scanning nearby POIs...' : 'Teleported. Checking for new POIs...')
+  }
+
+  async function confirmRescan() {
+    setRescanConfirmOpen(false)
+    await clearCachedScan(selectedGeo.latitude, selectedGeo.longitude)
+    scan('replace', selectedGeo)
   }
 
   useEffect(() => {
@@ -1373,7 +1380,7 @@ function MainExperience() {
               )}
             </AnimatePresence>
           </div>
-          <button className="icon" onClick={async () => { await clearCachedScan(selectedGeo.latitude, selectedGeo.longitude); scan('replace', selectedGeo) }} disabled={loading} aria-label="Refresh scan"><RefreshCw className={loading ? 'spin' : ''} size={19} /></button>
+          <button className="icon" onClick={() => setRescanConfirmOpen(true)} disabled={loading} aria-label="Refresh scan"><RefreshCw className={loading ? 'spin' : ''} size={19} /></button>
           <button className="icon" onClick={() => setSavedOpen(true)} aria-label="Saved POIs"><Bookmark size={19} /></button>
         </header>
         <div className="poi-list">
@@ -1412,6 +1419,34 @@ function MainExperience() {
       </section>
       <AnimatePresence>{detailPoi && <DetailCard poi={detailPoi} userGeo={selectedGeo} onClose={() => setDetailPoi(undefined)} />}</AnimatePresence>
       <AnimatePresence>{savedOpen && <SavedDrawer onClose={() => setSavedOpen(false)} onOpenGuide={setDetailPoi} />}</AnimatePresence>
+      <AnimatePresence>
+        {rescanConfirmOpen && (
+          <>
+            <motion.div
+              className="rescan-backdrop"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setRescanConfirmOpen(false)}
+            />
+            <motion.div
+              className="rescan-confirm-card"
+              style={{ x: '-50%', y: '-50%' }}
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              transition={{ duration: 0.16 }}
+            >
+              <p className="rescan-confirm-title"><RefreshCw size={13} /> Rescan this area?</p>
+              <p className="rescan-confirm-body">This will clear all current cards and re-research every nearby point of interest from scratch. It may take up to a minute to reload.</p>
+              <div className="rescan-confirm-actions">
+                <button className="rescan-btn-cancel" onClick={() => setRescanConfirmOpen(false)}>Cancel</button>
+                <button className="rescan-btn-confirm" onClick={confirmRescan}><RefreshCw size={13} /> Rescan</button>
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
     </main>
   )
 }

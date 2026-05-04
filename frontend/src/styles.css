@@ -239,6 +239,82 @@ input, select {
   transform: translateY(1px) scale(0.98);
 }
 
+.rescan-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 99;
+  background: rgba(0, 0, 0, 0.28);
+  backdrop-filter: blur(2px);
+}
+
+.rescan-confirm-card {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  width: 272px;
+  padding: 20px 20px 16px;
+  border-radius: 18px;
+  background: var(--surface-strong);
+  box-shadow: 0 18px 44px var(--deep-shadow), inset 0 1px 0 rgba(255,255,255,0.26);
+  z-index: 100;
+  color: var(--ink);
+}
+
+.rescan-confirm-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 900;
+  margin: 0 0 10px;
+  color: var(--ink);
+}
+
+.rescan-confirm-body {
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--muted);
+  margin: 0 0 16px;
+}
+
+.rescan-confirm-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.rescan-btn-cancel,
+.rescan-btn-confirm {
+  flex: 1;
+  border: 0;
+  border-radius: 11px;
+  padding: 10px 12px;
+  font-size: 12px;
+  font-weight: 900;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.rescan-btn-cancel {
+  background: var(--accent-soft);
+  color: var(--ink);
+}
+
+.rescan-btn-cancel:hover {
+  opacity: 0.8;
+}
+
+.rescan-btn-confirm {
+  background: var(--accent);
+  color: #fffaf5;
+}
+
+.rescan-btn-confirm:hover {
+  opacity: 0.88;
+}
+
 .location-info-card {
   position: fixed;
   top: 50%;
