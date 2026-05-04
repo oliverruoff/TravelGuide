@@ -274,22 +274,19 @@ input, select {
 
 .location-info-close {
   position: absolute;
-  top: 10px;
-  right: 10px;
-  width: 22px;
-  height: 22px;
+  top: 12px;
+  right: 14px;
   border: 0;
-  border-radius: 50%;
-  background: var(--accent-soft);
+  background: transparent;
   color: var(--ink);
-  display: grid;
-  place-items: center;
+  padding: 0;
   cursor: pointer;
-  opacity: 0.7;
+  opacity: 0.4;
+  line-height: 1;
 }
 
 .location-info-close:hover {
-  opacity: 1;
+  opacity: 0.8;
 }
 
 .radius-badge {
