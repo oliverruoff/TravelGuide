@@ -1,8 +1,8 @@
 import { AnimatePresence, motion, useDragControls } from 'framer-motion'
-import { Award, Bookmark, Compass, LocateFixed, MapPin, Moon, MousePointer2, Pin, PinOff, Play, RefreshCw, Settings, Sparkles, Sun, Volume2, X } from 'lucide-react'
+import { Award, Bookmark, Compass, LocateFixed, MapPin, Moon, MousePointer2, Pin, PinOff, Play, RefreshCw, Sparkles, Sun, Volume2, X } from 'lucide-react'
 import maplibregl from 'maplibre-gl'
 import { type PointerEvent, useEffect, useMemo, useRef, useState } from 'react'
-import { enrichPoi, getCandidates, getRuntimeConfig, selectPois, streamDetail } from './api'
+import { enrichPoi, getCandidates, getRuntimeConfig, selectPois, streamDetail, verifyPassword } from './api'
 import { db, markVisited, savePoi, deletePoi, unlockAchievement, getCachedScan, putCachedScan, clearCachedScan, getCachedDetail, putCachedDetail, updatePoiDetailText, type StoredPoi } from './db'
 import { useAppStore } from './store'
 import type { GeoFix, PoiSummary } from './types'
@@ -203,10 +203,25 @@ function readSavedFakeGeo(): GeoFix | undefined {
   }
 }
 
-function Onboarding() {
-  const { language, setLanguage, setConfigured } = useAppStore()
-  const [miniKey, setMiniKey] = useState('')
-  const [braveKey, setBraveKey] = useState('')
+function PasswordGate() {
+  const setToken = useAppStore((state) => state.setToken)
+  const [password, setPassword] = useState('')
+  const [error, setError] = useState(false)
+  const [loading, setLoading] = useState(false)
+
+  async function handleSubmit() {
+    if (!password.trim()) return
+    setLoading(true)
+    setError(false)
+    const token = await verifyPassword(password)
+    setLoading(false)
+    if (token) {
+      setToken(token)
+    } else {
+      setError(true)
+      setPassword('')
+    }
+  }
 
   return (
     <main className="onboarding">
@@ -215,24 +230,19 @@ function Onboarding() {
         <h1>TravelGuide</h1>
         <p>Your AI travel cards for places around you.</p>
         <label>
-          Language
-          <select value={language} onChange={(event) => setLanguage(event.target.value)}>
-            <option value="en">English</option>
-            <option value="de">Deutsch</option>
-            <option value="es">Español</option>
-            <option value="fr">Français</option>
-          </select>
+          Access password
+          <input
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && handleSubmit()}
+            type="password"
+            placeholder="Enter access password"
+            autoFocus
+          />
         </label>
-        <label>
-          MiniMax API key
-          <input value={miniKey} onChange={(event) => setMiniKey(event.target.value)} type="password" placeholder="Stored on the Python backend for V1" />
-        </label>
-        <label>
-          Brave Search API key
-          <input value={braveKey} onChange={(event) => setBraveKey(event.target.value)} type="password" placeholder="Stored on the Python backend for V1" />
-        </label>
-        <button className="primary" onClick={() => setConfigured(true)}>
-          <LocateFixed size={18} /> Start exploring
+        {error && <p className="onboarding-error">Incorrect password. Please try again.</p>}
+        <button className="primary" onClick={handleSubmit} disabled={loading || !password.trim()}>
+          <LocateFixed size={18} /> {loading ? 'Checking…' : 'Start exploring'}
         </button>
       </motion.section>
     </main>
@@ -958,7 +968,7 @@ function SavedDrawer({ onClose, onOpenGuide }: { onClose: () => void; onOpenGuid
 }
 
 function MainExperience() {
-  const { geo, setGeo, pois, setPois, activePoi, setActivePoi, language, savedOpen, setSavedOpen, setConfigured, theme } = useAppStore()
+  const { geo, setGeo, pois, setPois, activePoi, setActivePoi, language, setLanguage, savedOpen, setSavedOpen, theme } = useAppStore()
   const toggleTheme = useAppStore((state) => state.toggleTheme)
   const [detailPoi, setDetailPoi] = useState<PoiSummary | undefined>()
   const [status, setStatus] = useState('Finding your location...')
@@ -1208,7 +1218,17 @@ function MainExperience() {
             <span>Nearby</span>
             <strong>{status}</strong>
           </div>
-          <button className="icon" onClick={() => setConfigured(false)} aria-label="Open settings"><Settings size={19} /></button>
+          <select
+            className="language-toggle"
+            value={language}
+            onChange={(e) => setLanguage(e.target.value)}
+            aria-label="Language"
+          >
+            <option value="en">EN</option>
+            <option value="de">DE</option>
+            <option value="es">ES</option>
+            <option value="fr">FR</option>
+          </select>
           <div className="location-control">
             <button className={`icon ${fakeLocationMode ? 'active' : ''}`} onClick={() => setLocationMenuOpen((open) => !open)} aria-label="Choose location mode"><LocateFixed size={19} /></button>
             <AnimatePresence>
@@ -1264,7 +1284,8 @@ function MainExperience() {
 }
 
 export function App() {
-  const configured = useAppStore((state) => state.configured)
+  const token = useAppStore((state) => state.token)
+  const setToken = useAppStore((state) => state.setToken)
   const applyRuntimeConfig = useAppStore((state) => state.applyRuntimeConfig)
   const [runtimeReady, setRuntimeReady] = useState(false)
 
@@ -1275,6 +1296,13 @@ export function App() {
       .finally(() => setRuntimeReady(true))
   }, [applyRuntimeConfig])
 
+  // Drop back to password gate whenever any API call returns 401
+  useEffect(() => {
+    const handler = () => setToken(null)
+    window.addEventListener('travelguide:unauthorized', handler)
+    return () => window.removeEventListener('travelguide:unauthorized', handler)
+  }, [setToken])
+
   if (!runtimeReady) return null
-  return configured ? <MainExperience /> : <Onboarding />
+  return token ? <MainExperience /> : <PasswordGate />
 }

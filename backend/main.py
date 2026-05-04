@@ -1,12 +1,18 @@
+import base64
+import hashlib
+import hmac
+import json
 import logging
+import secrets
+import time
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, Response, StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
-from .models import CandidateRequest, PoiDetailRequest, PoiEnrichRequest, PoiSelectRequest, SessionConfigRequest
+from .models import CandidateRequest, PasswordCheckRequest, PoiDetailRequest, PoiEnrichRequest, PoiSelectRequest
 from .services import enrich_poi, fetch_overpass, select_pois, stream_detail
 from .settings import get_settings
 
@@ -28,6 +34,57 @@ _dist = Path(__file__).parent.parent / "frontend" / "dist"
 if _dist.exists():
     app.mount("/assets", StaticFiles(directory=_dist / "assets"), name="assets")
 
+# ---------------------------------------------------------------------------
+# Token helpers  (stateless HMAC — no database required)
+# ---------------------------------------------------------------------------
+_TOKEN_LIFETIME = 365 * 24 * 3600  # 1 year in seconds
+
+
+def _sign(payload: dict) -> str:
+    """Encode payload as base64 JSON and append an HMAC-SHA256 signature."""
+    payload_bytes = json.dumps(payload, separators=(",", ":")).encode()
+    payload_b64 = base64.urlsafe_b64encode(payload_bytes).decode()
+    sig = hmac.new(settings.app_secret.encode(), payload_b64.encode(), hashlib.sha256).hexdigest()
+    return f"{payload_b64}.{sig}"
+
+
+def _verify_token(token: str) -> bool:
+    """Return True iff the token has a valid signature and has not expired."""
+    try:
+        payload_b64, sig = token.rsplit(".", 1)
+        expected = hmac.new(settings.app_secret.encode(), payload_b64.encode(), hashlib.sha256).hexdigest()
+        if not secrets.compare_digest(sig, expected):
+            return False
+        payload = json.loads(base64.urlsafe_b64decode(payload_b64))
+        return time.time() < payload["exp"]
+    except Exception:
+        return False
+
+
+def _issue_token() -> str:
+    now = int(time.time())
+    return _sign({"iat": now, "exp": now + _TOKEN_LIFETIME})
+
+
+# ---------------------------------------------------------------------------
+# Auth dependency — injected into every protected route
+# ---------------------------------------------------------------------------
+
+def require_auth(authorization: str = Header(default="")) -> None:
+    """FastAPI dependency: validates Bearer token on every protected request.
+
+    When TRAVELGUIDE_ACCESS_PASSWORD is empty (dev mode) auth is skipped.
+    """
+    if not settings.travelguide_access_password:
+        return  # dev mode — no password configured, allow all
+    token = authorization.removeprefix("Bearer ").strip()
+    if not token or not _verify_token(token):
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+
+# ---------------------------------------------------------------------------
+# Public routes (no auth required)
+# ---------------------------------------------------------------------------
 
 @app.get("/api/health")
 async def health() -> dict[str, str]:
@@ -35,22 +92,28 @@ async def health() -> dict[str, str]:
 
 
 @app.get("/api/config/runtime")
-async def runtime_config() -> dict[str, str | bool]:
-    deployment_configured = bool(settings.minimax_api_key and settings.brave_api_key)
-    return {
-        "configured": deployment_configured,
-        "language": settings.travelguide_language.strip().lower() or "en",
-    }
+async def runtime_config() -> dict[str, str]:
+    """Return server-side defaults. Never exposes API keys."""
+    return {"language": settings.travelguide_language.strip().lower() or "en"}
 
 
-@app.post("/api/config/session")
-async def config_session(payload: SessionConfigRequest) -> dict[str, str]:
-    # V1 reads provider keys from the local backend environment for safer browser behavior.
-    return {"status": "ok", "language": payload.language}
+@app.post("/api/auth/verify")
+async def auth_verify(payload: PasswordCheckRequest) -> dict[str, str]:
+    """Validate access password and return a signed token on success."""
+    if not settings.travelguide_access_password:
+        # Dev mode: any password accepted — still issue a real token
+        return {"token": _issue_token()}
+    if not secrets.compare_digest(payload.password, settings.travelguide_access_password):
+        raise HTTPException(status_code=401, detail="Invalid password")
+    return {"token": _issue_token()}
 
+
+# ---------------------------------------------------------------------------
+# Protected routes
+# ---------------------------------------------------------------------------
 
 @app.post("/api/geo/candidates")
-async def geo_candidates(payload: CandidateRequest):
+async def geo_candidates(payload: CandidateRequest, _: None = Depends(require_auth)):
     try:
         return await fetch_overpass(settings, payload.lat, payload.lng, payload.radiusMeters)
     except Exception as e:
@@ -59,7 +122,7 @@ async def geo_candidates(payload: CandidateRequest):
 
 
 @app.post("/api/poi/select")
-async def poi_select(payload: PoiSelectRequest):
+async def poi_select(payload: PoiSelectRequest, _: None = Depends(require_auth)):
     try:
         return await select_pois(settings, payload.candidates, payload.language)
     except Exception as e:
@@ -68,7 +131,7 @@ async def poi_select(payload: PoiSelectRequest):
 
 
 @app.post("/api/poi/enrich")
-async def poi_enrich(payload: PoiEnrichRequest):
+async def poi_enrich(payload: PoiEnrichRequest, _: None = Depends(require_auth)):
     try:
         return await enrich_poi(settings, payload.poi, payload.language)
     except Exception as e:
@@ -77,7 +140,7 @@ async def poi_enrich(payload: PoiEnrichRequest):
 
 
 @app.post("/api/poi/detail/stream")
-async def poi_detail_stream(payload: PoiDetailRequest):
+async def poi_detail_stream(payload: PoiDetailRequest, _: None = Depends(require_auth)):
     try:
         async def events():
             async for text in stream_detail(settings, payload.poi, payload.language):
@@ -88,6 +151,7 @@ async def poi_detail_stream(payload: PoiDetailRequest):
     except Exception as e:
         logger.error(f"Error streaming detail: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to stream detail: {str(e)}")
+
 
 # Catch-all: serve index.html for client-side routing (only in production with dist/)
 if _dist.exists():

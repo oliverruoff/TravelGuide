@@ -6,6 +6,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     travelguide_language: str = "en"
     travelguide_tts_provider: str = "browser"
+    travelguide_access_password: str = ""  # empty = no password required (dev only)
     minimax_api_key: str = ""
     brave_api_key: str = ""
     app_secret: str = "dev-local-change-me"

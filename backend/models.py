@@ -55,10 +55,8 @@ class TtsRequest(BaseModel):
     text: str = Field(min_length=1, max_length=10000)
 
 
-class SessionConfigRequest(BaseModel):
-    language: str = "en"
-    minimaxApiKey: str | None = None
-    braveApiKey: str | None = None
+class PasswordCheckRequest(BaseModel):
+    password: str
 
 
 class Achievement(BaseModel):

@@ -383,34 +383,26 @@ def _strip_markup(text: str) -> str:
     return re.sub(r"\s+", " ", re.sub(r"<[^>]+>", "", text)).strip()
 
 
-def _detail_queries(poi: PoiSummary, language: str = "en") -> list[str]:
+def _detail_queries(poi: PoiSummary, language: str = "en", city: str | None = None) -> list[str]:
     name = poi.name.strip()
     compact_name = " ".join(token for token in re.split(r"\s+", name) if token)
+    city_suffix = f" {city}" if city else ""
     if language.startswith("de"):
-        queries = [
-            f'"{compact_name}"',
-            f'"{compact_name}" Geschichte',
-            f'"{compact_name}" Sehenswürdigkeit',
+        return [
+            f'"{compact_name}"{city_suffix}',
+            f'"{compact_name}" Geschichte{city_suffix}',
+            f'"{compact_name}" Sehenswürdigkeit{city_suffix}',
         ]
-        if "jagstradweg" in name.lower() or "radweg" in name.lower():
-            queries.extend([
-                f'"{compact_name}" Kocher Jagst Radweg',
-                '"Kocher-Jagst-Radweg" Landwirtschaft',
-            ])
-        if "kocher" in name.lower():
-            queries.append(f'"{compact_name}" Neuenstadt Hardthausen Gochsen')
-    else:
-        queries = [
-            f'"{compact_name}"',
-            f'"{compact_name}" history',
-            f'"{compact_name}" attraction visit',
-        ]
-    return queries
+    return [
+        f'"{compact_name}"{city_suffix}',
+        f'"{compact_name}" history{city_suffix}',
+        f'"{compact_name}" attraction visit{city_suffix}',
+    ]
 
 
-async def detail_sources(settings: Settings, poi: PoiSummary, language: str = "en") -> list[dict[str, Any]]:
+async def detail_sources(settings: Settings, poi: PoiSummary, language: str = "en", city: str | None = None) -> list[dict[str, Any]]:
     collected: list[dict[str, Any]] = []
-    for query in _detail_queries(poi, language):
+    for query in _detail_queries(poi, language, city=city):
         try:
             web = await brave_search(settings, query)
         except Exception:
@@ -419,42 +411,37 @@ async def detail_sources(settings: Settings, poi: PoiSummary, language: str = "e
     return _dedupe_sources(collected)
 
 
-def contextual_route_guide(poi: PoiSummary, sources: list[dict[str, Any]], language: str) -> str | None:
-    lowered = f"{poi.name} {poi.category}".lower()
-    if not ("radweg" in lowered or "jagstradweg" in lowered or "landwirtschaft" in lowered):
+async def _reverse_geocode_city(lat: float, lng: float) -> str | None:
+    """Reverse-geocode lat/lng to a city/town/village name via Nominatim."""
+    headers = {"User-Agent": "TravelGuideGenAI/0.1 (local prototype; olive@example.local)"}
+    try:
+        async with httpx.AsyncClient(timeout=3, headers=headers) as client:
+            resp = await client.get(
+                "https://nominatim.openstreetmap.org/reverse",
+                params={"lat": lat, "lon": lng, "format": "json"},
+            )
+            if resp.status_code != 200:
+                return None
+            address = resp.json().get("address", {})
+            return (
+                address.get("city")
+                or address.get("town")
+                or address.get("village")
+                or address.get("municipality")
+                or address.get("hamlet")
+            )
+    except Exception:
         return None
-    source_text = " ".join(_strip_markup(str(source.get("description") or "")) for source in sources)
-    if "kocher" not in source_text.lower() and "jagst" not in source_text.lower():
-        return None
-
-    route_note = ""
-    if "Forchtenberg" in source_text and "Bad Friedrichshall" in source_text:
-        route_note = " Der recherchierte Routenhinweis nennt den Abschnitt von Forchtenberg ueber Hardthausen und Neuenstadt am Kocher bis Bad Friedrichshall."
-    surface_note = ""
-    if "asphaltiert" in source_text.lower() or "separaten radwegen" in source_text.lower():
-        surface_note = " Die Strecke wird als ueberwiegend asphaltiert und gut fahrbar beschrieben."
-    landscape_note = ""
-    if "wein" in source_text.lower() or "wiesen" in source_text.lower() or "wälder" in source_text.lower() or "waelder" in source_text.lower():
-        landscape_note = " Entlang der Etappe werden Weinreben, Waelder und gruene Wiesen als Landschaftsbild genannt."
-
-    if language.startswith("de"):
-        return (
-            f"{poi.name} lenkt den Blick auf eine leise, aber sehr typische Seite des Kocher-Jagst-Radwegs: die Kulturlandschaft zwischen Feldern, Flussnaehe und kleinen Orten.{route_note}{surface_note}\n\n"
-            f"Statt hier ein grosses Denkmal zu erwarten, lohnt sich der genaue Blick auf die Umgebung: Feldraender, Wirtschaftswege, Beschilderung und die Art, wie die Route durch den Ort gefuehrt wird.{landscape_note} Gerade diese Details machen verstaendlich, warum Radwege in Baden-Wuerttemberg oft mehr sind als reine Verbindungslinien.\n\n"
-            "Gut zu wissen: Wenn du hier kurz anhältst, schau nicht nur auf den Marker, sondern einmal in beide Richtungen des Weges. So erkennst du besser, wie Landwirtschaft, Dorfstruktur und Flusslandschaft zusammenhaengen."
-        )
-    return (
-        f"{poi.name} points to a quiet but characteristic side of the Kocher-Jagst cycle route: the working landscape between fields, river edges, and small settlements.{surface_note}\n\n"
-        f"Do not expect a headline monument here. The worthwhile part is the context: field edges, utility paths, signs, and the way the route moves through the village.{landscape_note} Those details make the stop feel connected to the wider route rather than isolated on the map.\n\n"
-        "Good to know: pause for a moment and look both directions along the path. It helps you read how farming, village structure, and the river landscape fit together."
-    )
 
 
-async def wikipedia_image(query: str, language: str = "en") -> str | None:
+async def wikipedia_image(query: str, language: str = "en", city: str | None = None) -> str | None:
     lang = "de" if language.startswith("de") else "en"
     headers = {"User-Agent": "TravelGuideGenAI/0.1 (local prototype; olive@example.local)"}
     async with httpx.AsyncClient(timeout=15, headers=headers, follow_redirects=True) as client:
         variants = [query, query.replace(" ", "_")]
+        if city:
+            variants.append(f"{query} {city}")
+            variants.append(f"{query} {city}".replace(" ", "_"))
         if lang == "de":
             variants.append(f"{query}_(Berlin)")
         for title in variants:
@@ -593,29 +580,33 @@ def fallback_photo_url(poi: PoiSummary) -> str:
 
 
 async def enrich_poi(settings: Settings, poi: PoiSummary, language: str) -> PoiSummary:
-    # Use a focused query — quoted name + "photo" yields specific, photographic results
-    strict_query = f'"{poi.name}" photo'
-    broad_query = f'{poi.name} {poi.category}'
+    # Resolve city once via reverse geocoding — used to make all image queries more specific
+    city = await _reverse_geocode_city(poi.lat, poi.lng)
+    city_suffix = f" {city}" if city else ""
+
+    strict_query = f'"{poi.name}"{city_suffix} photo'
+    broad_query = f'{poi.name} {poi.category}{city_suffix}'
+    web_query = f'"{poi.name}" {poi.category}{city_suffix}'
     try:
-        web = await brave_search(settings, f'"{poi.name}" {poi.category}')
-        # Pass 1: strict quoted query, 10 results
+        web = await brave_search(settings, web_query)
+        # Pass 1: strict quoted query + city, 10 results
         image_url = None
         try:
             images = await brave_search(settings, strict_query, image=True, count=10)
             image_url = await _pick_best_image(images.get("results", []), poi)
         except Exception:
             pass
-        # Pass 2: broader unquoted query if pass 1 found nothing
+        # Pass 2: broader unquoted query + city if pass 1 found nothing
         if not image_url:
             try:
                 images2 = await brave_search(settings, broad_query, image=True, count=10)
                 image_url = await _pick_best_image(images2.get("results", []), poi)
             except Exception:
                 pass
-        # Pass 3: Wikipedia
+        # Pass 3: Wikipedia + city hint
         if not image_url:
             try:
-                image_url = await wikipedia_image(poi.name, language)
+                image_url = await wikipedia_image(poi.name, language, city=city)
             except Exception:
                 image_url = None
         snippets = [{"title": r.get("title"), "description": r.get("description"), "url": r.get("url")} for r in web.get("web", {}).get("results", [])[:5]]
@@ -654,38 +645,27 @@ def safe_detail_fallback(poi: PoiSummary, sources: list[dict[str, Any]], languag
     first_source = next((source for source in sources if source.get("description")), None)
     if language.startswith("de"):
         lowered = f"{poi.name} {poi.category}".lower()
-        if "radweg" in lowered or "information" in lowered:
-            intro = (
-                f"{poi.name} ist ein kleiner Orientierungspunkt am Weg, der den Blick auf die Landschaft am Kocher schaerft. "
-                "Der Name verweist auf das Zusammenspiel aus Landwirtschaft, Flussraum und Radroute, das diese Gegend praegt."
-            )
-        elif "kirche" in lowered or "church" in lowered:
+        if "kirche" in lowered or "church" in lowered:
             intro = f"{poi.name} praegt als kirchlicher Ort das Ortsbild und lohnt sich vor allem fuer einen ruhigen Blick auf Architektur, Lage und Details."
-        elif "kocher" in lowered or "fluss" in lowered or "river" in lowered:
-            intro = f"{poi.name} fuehrt dich an die Flusslandschaft des Kochers, einen der stillen roten Faeden dieser Gegend."
         else:
-            intro = f"{poi.name} lohnt sich als kurzer Halt, weil der Ort etwas ueber den Alltag und die Struktur der Umgebung erzaehlt."
+            intro = f"{poi.name} lohnt sich als kurzer Halt und erzaehlt etwas ueber die Struktur und den Charakter der Umgebung."
         if first_source:
             intro += f" Recherchierter Hinweis: {str(first_source['description']).strip()[:220]}"
         return (
             f"{intro}\n\n"
-            "Gut zu wissen: Achte vor Ort auf Beschilderung, Wegebeziehungen, Materialien und darauf, wie sich der Platz in die umliegenden Felder, Haeuser oder den Flussraum einbindet. "
-            "Das sind die Details, die einen unscheinbaren Kartenpunkt zu einem echten kleinen Reisefuehrer-Moment machen, ohne unbelegte Geschichte zu erfinden."
+            "Gut zu wissen: Achte vor Ort auf Beschilderung, Wegebeziehungen, Materialien und darauf, wie sich der Platz in die Umgebung einbindet. "
+            "Das sind die Details, die einen Kartenpunkt zu einem echten Reisefuehrer-Moment machen, ohne unbelegte Geschichte zu erfinden."
         )
     lowered = f"{poi.name} {poi.category}".lower()
-    if "cycle" in lowered or "radweg" in lowered or "information" in lowered:
-        intro = f"{poi.name} is a small orientation point along the route, drawing attention to the farmland, river landscape, and everyday geography around the Kocher."
-    elif "church" in lowered or "kirche" in lowered:
+    if "church" in lowered or "kirche" in lowered:
         intro = f"{poi.name} stands out as a quiet church stop, best approached through its setting, architecture, and small visible details."
-    elif "kocher" in lowered or "river" in lowered:
-        intro = f"{poi.name} brings you close to the Kocher river landscape, one of the calm threads running through this area."
     else:
-        intro = f"{poi.name} is worth a short pause because it says something about the everyday shape of the surrounding place."
+        intro = f"{poi.name} is worth a short pause and says something about the character of the surrounding place."
     if first_source:
         intro += f" Researched note: {str(first_source['description']).strip()[:220]}"
     return (
         f"{intro}\n\n"
-        "Good to know: look for signage, path connections, materials, sightlines, and how the spot fits into nearby fields, houses, or the river corridor. "
+        "Good to know: look for signage, path connections, materials, and how the spot fits into its surroundings. "
         "Those observable details make the stop useful without inventing unsupported history."
     )
 
@@ -730,13 +710,8 @@ async def complete_detail_text(settings: Settings, poi: PoiSummary, sources: lis
 
 
 async def stream_detail(settings: Settings, poi: PoiSummary, language: str) -> AsyncIterator[str]:
-    sources = await detail_sources(settings, poi, language)
-    contextual = contextual_route_guide(poi, sources, language)
-    if contextual:
-        for word in contextual.split(" "):
-            yield word + " "
-        return
-
+    city = await _reverse_geocode_city(poi.lat, poi.lng)
+    sources = await detail_sources(settings, poi, language, city=city)
     detail_text = await complete_detail_text(settings, poi, sources, language)
     for word in detail_text.split(" "):
         yield word + " "
