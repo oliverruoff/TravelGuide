@@ -1,5 +1,5 @@
 import { AnimatePresence, motion, useDragControls } from 'framer-motion'
-import { Award, Bookmark, Compass, LocateFixed, MapPin, Moon, MousePointer2, Pin, PinOff, Play, RefreshCw, Sparkles, Sun, Volume2, X } from 'lucide-react'
+import { Award, Bookmark, Compass, Info, LocateFixed, MapPin, Moon, MousePointer2, Pin, PinOff, Play, RefreshCw, Sparkles, Sun, Volume2, X } from 'lucide-react'
 import maplibregl from 'maplibre-gl'
 import { type PointerEvent, useEffect, useMemo, useRef, useState } from 'react'
 import { enrichPoi, getCandidates, getRuntimeConfig, selectPois, streamDetail, verifyPassword } from './api'
@@ -112,12 +112,12 @@ function mergeIncomingPois(current: PoiSummary[], incoming: PoiSummary[]) {
   return merged
 }
 
-function searchRadiusFeature(geo: GeoFix) {
+function radiusFeature(geo: GeoFix, radiusMeters: number) {
   const points: [number, number][] = []
   const earthRadius = 6371000
   const lat = geo.latitude * Math.PI / 180
   const lng = geo.longitude * Math.PI / 180
-  const angularDistance = poiSearchRadiusMeters / earthRadius
+  const angularDistance = radiusMeters / earthRadius
 
   for (let i = 0; i <= 96; i += 1) {
     const bearing = (i / 96) * 2 * Math.PI
@@ -140,6 +140,14 @@ function searchRadiusFeature(geo: GeoFix) {
       coordinates: [points],
     },
   }
+}
+
+function searchRadiusFeature(geo: GeoFix) {
+  return radiusFeature(geo, poiSearchRadiusMeters)
+}
+
+function searchFallbackRadiusFeature(geo: GeoFix) {
+  return radiusFeature(geo, 1000)
 }
 
 function rasterMapStyle(theme: 'light' | 'dark'): maplibregl.StyleSpecification {
@@ -193,34 +201,57 @@ function updateSearchRadiusOverlay(map: maplibregl.Map, geo: GeoFix, overlay: HT
 }
 
 function ensureSearchRadiusLayer(map: maplibregl.Map, geo: GeoFix) {
+  // 500 m primary circle
   const existing = map.getSource('poi-search-radius') as maplibregl.GeoJSONSource | undefined
   if (existing) {
     existing.setData(searchRadiusFeature(geo))
-    return
+  } else {
+    map.addSource('poi-search-radius', {
+      type: 'geojson',
+      data: searchRadiusFeature(geo),
+    })
+    map.addLayer({
+      id: 'poi-search-radius-fill',
+      type: 'fill',
+      source: 'poi-search-radius',
+      paint: {
+        'fill-color': '#ffffff',
+        'fill-opacity': 0,
+      },
+    })
+    map.addLayer({
+      id: 'poi-search-radius-line',
+      type: 'line',
+      source: 'poi-search-radius',
+      paint: {
+        'line-color': '#7facff',
+        'line-width': 2,
+        'line-opacity': 0.32,
+      },
+    })
   }
-  map.addSource('poi-search-radius', {
-    type: 'geojson',
-    data: searchRadiusFeature(geo),
-  })
-  map.addLayer({
-    id: 'poi-search-radius-fill',
-    type: 'fill',
-    source: 'poi-search-radius',
-    paint: {
-      'fill-color': '#ffffff',
-      'fill-opacity': 0,
-    },
-  })
-  map.addLayer({
-    id: 'poi-search-radius-line',
-    type: 'line',
-    source: 'poi-search-radius',
-    paint: {
-      'line-color': '#7facff',
-      'line-width': 2,
-      'line-opacity': 0.32,
-    },
-  })
+
+  // 1000 m fallback circle (dashed, more subtle)
+  const existingFallback = map.getSource('poi-fallback-radius') as maplibregl.GeoJSONSource | undefined
+  if (existingFallback) {
+    existingFallback.setData(searchFallbackRadiusFeature(geo))
+  } else {
+    map.addSource('poi-fallback-radius', {
+      type: 'geojson',
+      data: searchFallbackRadiusFeature(geo),
+    })
+    map.addLayer({
+      id: 'poi-fallback-radius-line',
+      type: 'line',
+      source: 'poi-fallback-radius',
+      paint: {
+        'line-color': '#7facff',
+        'line-width': 1.5,
+        'line-opacity': 0.22,
+        'line-dasharray': [4, 5],
+      },
+    })
+  }
 }
 
 function fitSearchRadius(map: maplibregl.Map, geo: GeoFix, duration = 900) {
@@ -303,9 +334,11 @@ function MapPanel({
   activePoi,
   locationLabel,
   fakeLocationMode,
+  locationInfoOpen,
   theme,
   onToggleTheme,
   onLocationBadgeClick,
+  onLocationInfoClose,
   onPickLocation,
   onSelect,
   onOpenPoi
@@ -315,9 +348,11 @@ function MapPanel({
   activePoi?: PoiSummary
   locationLabel: string
   fakeLocationMode: boolean
+  locationInfoOpen: boolean
   theme: 'light' | 'dark'
   onToggleTheme: () => void
   onLocationBadgeClick: () => void
+  onLocationInfoClose: () => void
   onPickLocation: (geo: GeoFix) => void
   onSelect: (poi: PoiSummary) => void
   onOpenPoi: (poi: PoiSummary) => void
@@ -521,6 +556,22 @@ function MapPanel({
         <LocateFixed size={17} />
       </button>
       <div className="radius-badge">AI search {poiSearchRadiusMeters} m</div>
+      <AnimatePresence>
+        {locationInfoOpen && (
+          <motion.div
+            className="location-info-card"
+            initial={{ opacity: 0, y: 8, scale: 0.97 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 8, scale: 0.97 }}
+            transition={{ duration: 0.18 }}
+          >
+            <button className="location-info-close" onClick={onLocationInfoClose} aria-label="Close info"><X size={13} /></button>
+            <p className="location-info-title"><Info size={13} /> How POIs are found</p>
+            <p>Your position is scanned within a <strong>500 m radius</strong>. If fewer than 8 points of interest are found, the search automatically expands to <strong>1,000 m</strong> — shown as the dashed circle on the map.</p>
+            <p>The scan updates when you move more than <strong>50 m</strong> from your last scan point. Use the refresh button to force a new scan immediately.</p>
+          </motion.div>
+        )}
+      </AnimatePresence>
       <AnimatePresence>
         {fakeLocationMode && (
           <motion.div className="pick-location-hint" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 10 }}>
@@ -1056,6 +1107,7 @@ function MainExperience() {
   const [loading, setLoading] = useState(false)
   const [imageLoadingIds, setImageLoadingIds] = useState<Set<string>>(new Set())
   const [locationMenuOpen, setLocationMenuOpen] = useState(false)
+  const [locationInfoOpen, setLocationInfoOpen] = useState(false)
   const [fakeLocationMode, setFakeLocationMode] = useState(false)
   const [locationSource, setLocationSource] = useState<'gps' | 'demo' | 'fake'>(() => readSavedFakeGeo() ? 'fake' : 'demo')
   const locationSourceRef = useRef(locationSource)
@@ -1283,9 +1335,11 @@ function MainExperience() {
         activePoi={active}
         locationLabel={locationLabel}
         fakeLocationMode={fakeLocationMode}
+        locationInfoOpen={locationInfoOpen}
         theme={theme}
         onToggleTheme={toggleTheme}
         onLocationBadgeClick={() => setLocationMenuOpen((open) => !open)}
+        onLocationInfoClose={() => setLocationInfoOpen(false)}
         onPickLocation={pickFakeLocation}
         onSelect={setActivePoi}
         onOpenPoi={(poi) => {
@@ -1307,6 +1361,7 @@ function MainExperience() {
                 <motion.div className="location-menu" initial={{ opacity: 0, y: 8, scale: 0.96 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 8, scale: 0.96 }}>
                   <button onClick={requestLocation}><LocateFixed size={16} /> Use GPS</button>
                   <button onClick={startFakeLocation}><MousePointer2 size={16} /> Teleport</button>
+                  <button onClick={() => { setLocationInfoOpen(o => !o); setLocationMenuOpen(false) }}><Info size={16} /> How it works</button>
                 </motion.div>
               )}
             </AnimatePresence>
