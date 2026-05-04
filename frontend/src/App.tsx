@@ -716,6 +716,7 @@ function DetailCard({ poi, userGeo, onClose }: { poi: PoiSummary; userGeo?: GeoF
   const draftTextRef = useRef('')
   const displayIndexRef = useRef(0)
   const animationIdRef = useRef<number | null>(null)
+  const fromCacheRef = useRef(false)
 
   useEffect(() => {
     setFloatSettled(false)
@@ -727,19 +728,23 @@ function DetailCard({ poi, userGeo, onClose }: { poi: PoiSummary; userGeo?: GeoF
   useEffect(() => {
     if (!text || displayedText.length === text.length) return
 
+    const fast = fromCacheRef.current
     const scheduleNextChar = () => {
       displayIndexRef.current += 1
       setDisplayedText(text.slice(0, displayIndexRef.current))
       
       if (displayIndexRef.current < text.length) {
         // Variable delay for natural typing: 20-60ms between chars, longer after punctuation
+        // When serving from cache, run 3× faster
         const nextChar = text[displayIndexRef.current]
-        const delay = ['.', '!', '?', '\n'].includes(nextChar) ? 40 : Math.random() * 40 + 20
+        const delay = fast
+          ? (['.', '!', '?', '\n'].includes(nextChar) ? 13 : Math.random() * 13 + 7)
+          : (['.', '!', '?', '\n'].includes(nextChar) ? 40 : Math.random() * 40 + 20)
         animationIdRef.current = window.setTimeout(scheduleNextChar, delay)
       }
     }
 
-    const initialDelay = window.setTimeout(scheduleNextChar, 50)
+    const initialDelay = window.setTimeout(scheduleNextChar, fast ? 17 : 50)
     return () => {
       clearTimeout(initialDelay)
       if (animationIdRef.current) clearTimeout(animationIdRef.current)
@@ -752,15 +757,15 @@ function DetailCard({ poi, userGeo, onClose }: { poi: PoiSummary; userGeo?: GeoF
     setText('')
     setDisplayedText('')
     displayIndexRef.current = 0
+    fromCacheRef.current = false
     setLoading(true)
     setFailed(false)
 
     // Try to load from cache first
     getCachedDetail(poi.id, language).then((cached) => {
       if (cached) {
+        fromCacheRef.current = true
         setText(cached)
-        setDisplayedText(cached)
-        displayIndexRef.current = cached.length
         setLoading(false)
         return
       }
