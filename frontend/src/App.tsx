@@ -1242,19 +1242,9 @@ function MainExperience() {
       const loadedIncoming: PoiSummary[] = []
       setStatus(mode === 'replace' ? `Loading ${poisToLoad.length} cards...` : `Loading ${poisToLoad.length} new cards...`)
 
-      // Show all skeleton cards immediately, then enrich up to 3 at a time
-      for (const poi of poisToLoad) {
-        if (mode === 'replace') {
-          setPois([...useAppStore.getState().pois, poi])
-        } else {
-          loadedIncoming.push(poi)
-          setPois(mergeIncomingPois(useAppStore.getState().pois, loadedIncoming))
-        }
-        if (!useAppStore.getState().activePoi) setActivePoi(poi)
-        setImageLoadingIds((ids) => new Set(ids).add(poi.id))
-      }
-
-      // Concurrency-limited parallel enrichment (max 3 at once)
+      // Concurrency-limited enrichment: push stub + start enriching immediately,
+      // up to CONCURRENCY in-flight at once. For replace mode this means the
+      // nearest POI appears and is fully enriched before further stubs are added.
       const CONCURRENCY = 3
       const enrichOne = async (poi: PoiSummary) => {
         try {
@@ -1271,10 +1261,33 @@ function MainExperience() {
         }
       }
 
-      // Process in chunks of CONCURRENCY
-      for (let i = 0; i < poisToLoad.length; i += CONCURRENCY) {
-        const chunk = poisToLoad.slice(i, i + CONCURRENCY)
-        await Promise.all(chunk.map(enrichOne))
+      // Push stub + fire enrichment for each POI as soon as a concurrency slot is free.
+      // For prepend-new mode we still push all stubs first (existing behaviour).
+      if (mode === 'prepend-new') {
+        for (const poi of poisToLoad) {
+          loadedIncoming.push(poi)
+          setPois(mergeIncomingPois(useAppStore.getState().pois, loadedIncoming))
+          if (!useAppStore.getState().activePoi) setActivePoi(poi)
+          setImageLoadingIds((ids) => new Set(ids).add(poi.id))
+        }
+        for (let i = 0; i < poisToLoad.length; i += CONCURRENCY) {
+          await Promise.all(poisToLoad.slice(i, i + CONCURRENCY).map(enrichOne))
+        }
+      } else {
+        // replace mode: nearest-first — push one stub, enrich it, then next
+        const inFlight: Promise<void>[] = []
+        for (const poi of poisToLoad) {
+          // Push stub immediately so user sees the card skeleton
+          setPois([...useAppStore.getState().pois, poi])
+          if (!useAppStore.getState().activePoi) setActivePoi(poi)
+          setImageLoadingIds((ids) => new Set(ids).add(poi.id))
+
+          // Wait for a free slot before firing the next enrichment
+          if (inFlight.length >= CONCURRENCY) await inFlight.shift()!
+          inFlight.push(enrichOne(poi))
+        }
+        // Drain remaining in-flight enrichments
+        await Promise.all(inFlight)
       }
       // Persist the final enriched POI list to the scan cache
       const finalPois = useAppStore.getState().pois
