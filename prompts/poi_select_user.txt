@@ -7,6 +7,7 @@ Avoid schools, kindergartens, banks, industrial companies, hairdressers, and eme
 Return ONLY a JSON array. Each item must contain id, name, lat, lng, category, oneLiner, confidence.
 The returned name, category, and oneLiner must be in this user language: {language}.
 The returned name may be a localized display title, but it must still refer exactly to the candidate's researchName/nativeName. Prefer culturally interesting, scenic, historic, unusual, or locally meaningful places.
+Only include places matching these checked category filters: {category_filters}.
 
 Candidates:
 {candidates_json}

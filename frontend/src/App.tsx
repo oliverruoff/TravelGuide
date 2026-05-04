@@ -1,5 +1,5 @@
 import { AnimatePresence, motion, useDragControls } from 'framer-motion'
-import { Award, Bookmark, Compass, Info, LocateFixed, MapPin, Moon, MousePointer2, Pin, PinOff, Play, RefreshCw, Sparkles, Sun, Volume2, X } from 'lucide-react'
+import { Award, Bookmark, Compass, Filter, Info, LocateFixed, MapPin, Moon, MousePointer2, Pin, PinOff, Play, RefreshCw, Sparkles, Sun, Volume2, X } from 'lucide-react'
 import maplibregl from 'maplibre-gl'
 import { type PointerEvent, useEffect, useMemo, useRef, useState } from 'react'
 import { enrichPoi, getCandidates, getRuntimeConfig, selectPois, streamDetail, verifyPassword } from './api'
@@ -12,6 +12,49 @@ const savedFakeGeoKey = 'travelguide.fakeGeo'
 const poiSearchRadiusMeters = 500
 const maxPoiListItems = 50
 const movingRefreshDistanceMeters = 140
+const categoryFilterStorageKey = 'travelguide.categoryFilters'
+
+const CATEGORY_FILTER_GROUPS = [
+  {
+    title: 'Culture',
+    items: [
+      { id: 'museum', label: 'Museums & arts', color: '#8B5CF6' },
+      { id: 'historic', label: 'Historic places', color: '#A78BFA' },
+      { id: 'religious', label: 'Sacred sites', color: '#EC4899' },
+    ],
+  },
+  {
+    title: 'Outdoors',
+    items: [
+      { id: 'nature', label: 'Parks & nature', color: '#22C55E' },
+      { id: 'water', label: 'Water', color: '#3B82F6' },
+      { id: 'viewpoint', label: 'Views', color: '#06B6D4' },
+      { id: 'trail', label: 'Trails', color: '#10B981' },
+    ],
+  },
+  {
+    title: 'Local life',
+    items: [
+      { id: 'food', label: 'Food & markets', color: '#84CC16' },
+      { id: 'civic', label: 'Civic & info', color: '#F59E0B' },
+    ],
+  },
+] as const
+
+type CategoryFilterId = typeof CATEGORY_FILTER_GROUPS[number]['items'][number]['id']
+const ALL_CATEGORY_FILTERS = CATEGORY_FILTER_GROUPS.flatMap((group) => group.items.map((item) => item.id)) as CategoryFilterId[]
+
+const CATEGORY_FILTER_KEYWORDS: Record<CategoryFilterId, string[]> = {
+  museum: ['museum', 'library', 'archive', 'gallery', 'galerie', 'artwork', 'sculpture', 'theatre', 'theater', 'cinema', 'opera', 'arts', 'kunst', 'arte', 'art'],
+  historic: ['historic', 'historisch', 'historique', 'histórico', 'monument', 'memorial', 'denkmal', 'ruin', 'tower', 'bridge', 'square', 'cemetery', 'graveyard', 'castle', 'burg', 'schloss', 'palace', 'fort', 'heritage'],
+  religious: ['church', 'kirche', 'chapel', 'cathedral', 'mosque', 'synagogue', 'temple', 'sacred', 'religious', 'monastery', 'abbey', 'église', 'iglesia'],
+  nature: ['park', 'garden', 'garten', 'nature', 'natural', 'forest', 'reserve', 'wildlife', 'botanical', 'hill', 'mountain', 'peak', 'summit', 'jardin', 'parque'],
+  water: ['river', 'lake', 'water', 'fluss', 'see', 'stream', 'creek', 'pond', 'waterfall', 'fountain', 'canal', 'harbour', 'harbor', 'marina', 'rivière', 'lac', 'agua'],
+  viewpoint: ['viewpoint', 'aussicht', 'view', 'panorama', 'observatory', 'lookout', 'mirador', 'vue'],
+  food: ['restaurant', 'cafe', 'café', 'bar', 'pub', 'brewery', 'winery', 'bistro', 'shop', 'market', 'markt', 'mercado', 'marché', 'food'],
+  trail: ['trail', 'radweg', 'path', 'hiking', 'cycling', 'route', 'walk', 'sentier', 'camino'],
+  civic: ['town hall', 'townhall', 'hall', 'rathaus', 'community', 'public', 'information', 'board', 'map', 'village', 'place', 'civic', 'mairie'],
+}
 
 // Lightweight markdown renderer — supports ##/### headings, **bold**, - bullets, paragraphs
 function SimpleMarkdown({ text }: { text: string }) {
@@ -74,6 +117,28 @@ function getCategoryColor(category: string): string {
   if (lower.includes('artwork') || lower.includes('sculpture') || lower.includes('galerie') || lower.includes('gallery') || lower.includes('theatre') || lower.includes('theater') || lower.includes('cinema') || lower.includes('opera')) return '#D946EF'
   if (lower.includes('park') || lower.includes('garden') || lower.includes('garten') || lower.includes('nature') || lower.includes('forest') || lower.includes('reserve') || lower.includes('wildlife') || lower.includes('botanical')) return '#22C55E'
   return ''
+}
+
+function readStoredCategoryFilters(): CategoryFilterId[] {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(categoryFilterStorageKey) || 'null')
+    if (!Array.isArray(parsed)) return ALL_CATEGORY_FILTERS
+    const valid = parsed.filter((item): item is CategoryFilterId => ALL_CATEGORY_FILTERS.includes(item))
+    return valid
+  } catch {
+    return ALL_CATEGORY_FILTERS
+  }
+}
+
+function categoryFilterSignature(filters: CategoryFilterId[]): string {
+  return filters.slice().sort().join('-') || 'none'
+}
+
+function poiMatchesCategoryFilters(poi: PoiSummary, filters: CategoryFilterId[]): boolean {
+  if (filters.length === 0) return false
+  if (filters.length === ALL_CATEGORY_FILTERS.length) return true
+  const text = `${poi.category} ${poi.name} ${poi.researchName ?? ''} ${poi.nativeName ?? ''}`.toLowerCase()
+  return filters.some((filter) => CATEGORY_FILTER_KEYWORDS[filter].some((keyword) => text.includes(keyword)))
 }
 
 function distanceMeters(a: GeoFix, b: GeoFix) {
@@ -485,7 +550,10 @@ function MapPanel({
       `
       const label = document.createElement('span')
       label.className = 'poi-pin-label'
-      label.textContent = poi.name
+      const labelText = document.createElement('span')
+      labelText.className = 'poi-pin-label-text'
+      labelText.textContent = poi.name
+      label.appendChild(labelText)
       node.appendChild(label)
       const openMarkerPoi = (event: MouseEvent | PointerEvent | TouchEvent) => {
         event.preventDefault()
@@ -499,10 +567,10 @@ function MapPanel({
       anchor.appendChild(node)
       const marker = new maplibregl.Marker({ element: anchor, anchor: 'center', offset: [0, 0] }).setLngLat([poi.lng, poi.lat]).addTo(mapRef.current!)
       window.requestAnimationFrame(() => {
-        const overflow = label.scrollWidth - label.clientWidth
+        const overflow = labelText.scrollWidth - label.clientWidth
         if (overflow > 2) {
-          label.style.setProperty('--label-overflow', `${overflow}px`)
-          label.classList.add('scrolling')
+          labelText.style.setProperty('--label-overflow', `${overflow}px`)
+          labelText.classList.add('scrolling')
         }
       })
       markers.current.push(marker)
@@ -1118,6 +1186,76 @@ function LanguagePicker({ language, onChange }: { language: string; onChange: (l
   )
 }
 
+function CategoryFilterPicker({
+  selected,
+  onChange,
+}: {
+  selected: CategoryFilterId[]
+  onChange: (filters: CategoryFilterId[]) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+  const selectedSet = useMemo(() => new Set(selected), [selected])
+  const allSelected = selected.length === ALL_CATEGORY_FILTERS.length
+
+  useEffect(() => {
+    if (!open) return
+    function handleClick(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', handleClick)
+    return () => document.removeEventListener('mousedown', handleClick)
+  }, [open])
+
+  function setFilters(next: CategoryFilterId[]) {
+    localStorage.setItem(categoryFilterStorageKey, JSON.stringify(next))
+    onChange(next)
+  }
+
+  function toggleFilter(id: CategoryFilterId) {
+    const next = selectedSet.has(id)
+      ? selected.filter((item) => item !== id)
+      : [...selected, id]
+    setFilters(next)
+  }
+
+  return (
+    <div className="filter-picker" ref={ref}>
+      <button className={`icon filter-trigger ${!allSelected ? 'active' : ''}`} onClick={() => setOpen((value) => !value)} aria-label="Filter POI categories">
+        <Filter size={18} />
+      </button>
+      {open && (
+        <div className="filter-popover">
+          <div className="filter-popover-head">
+            <strong>Categories</strong>
+            <button onClick={() => setFilters(allSelected ? [] : ALL_CATEGORY_FILTERS)}>
+              {allSelected ? 'Clear' : 'All'}
+            </button>
+          </div>
+          {CATEGORY_FILTER_GROUPS.map((group) => (
+            <section key={group.title} className="filter-group">
+              <p>{group.title}</p>
+              <div className="filter-options">
+                {group.items.map((item) => (
+                  <label key={item.id} className="filter-option" style={{ '--filter-color': item.color } as React.CSSProperties}>
+                    <input
+                      type="checkbox"
+                      checked={selectedSet.has(item.id)}
+                      onChange={() => toggleFilter(item.id)}
+                    />
+                    <span aria-hidden="true" />
+                    {item.label}
+                  </label>
+                ))}
+              </div>
+            </section>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function MainExperience() {
   const { geo, setGeo, pois, setPois, activePoi, setActivePoi, language, setLanguage, savedOpen, setSavedOpen, theme } = useAppStore()
   const toggleTheme = useAppStore((state) => state.toggleTheme)
@@ -1129,6 +1267,7 @@ function MainExperience() {
   const [locationInfoOpen, setLocationInfoOpen] = useState(false)
   const [rescanConfirmOpen, setRescanConfirmOpen] = useState(false)
   const [fakeLocationMode, setFakeLocationMode] = useState(false)
+  const [categoryFilters, setCategoryFilters] = useState<CategoryFilterId[]>(readStoredCategoryFilters)
   const [locationSource, setLocationSource] = useState<'gps' | 'demo' | 'fake'>(() => readSavedFakeGeo() ? 'fake' : 'demo')
   const locationSourceRef = useRef(locationSource)
   const watchIdRef = useRef<number | undefined>(undefined)
@@ -1139,6 +1278,9 @@ function MainExperience() {
   }, [locationSource])
 
   const selectedGeo = geo ?? fallbackBerlin
+  const filterSignature = categoryFilterSignature(categoryFilters)
+  const scanCacheLanguage = `${language}|${filterSignature}`
+  const visiblePois = useMemo(() => pois.filter((poi) => poiMatchesCategoryFilters(poi, categoryFilters)), [pois, categoryFilters])
 
   function setLocationSourceNow(source: 'gps' | 'demo' | 'fake') {
     locationSourceRef.current = source
@@ -1224,7 +1366,7 @@ function MainExperience() {
 
   async function confirmRescan() {
     setRescanConfirmOpen(false)
-    await clearCachedScan(selectedGeo.latitude, selectedGeo.longitude, language)
+    await clearCachedScan(selectedGeo.latitude, selectedGeo.longitude, scanCacheLanguage)
     scan('replace', selectedGeo)
   }
 
@@ -1246,7 +1388,7 @@ function MainExperience() {
     try {
       if (mode === 'replace') {
         // Check scan cache before hitting the backend
-        const cached = await getCachedScan(scanGeo.latitude, scanGeo.longitude, language)
+        const cached = await getCachedScan(scanGeo.latitude, scanGeo.longitude, scanCacheLanguage)
         if (cached) {
           setPois(cached.pois)
           if (cached.pois.length > 0) setActivePoi(cached.pois[0])
@@ -1263,7 +1405,7 @@ function MainExperience() {
       const byDistance = (a: PoiSummary, b: PoiSummary) =>
         distanceMeters({ latitude: a.lat, longitude: a.lng }, { latitude: scanGeo.latitude, longitude: scanGeo.longitude }) -
         distanceMeters({ latitude: b.lat, longitude: b.lng }, { latitude: scanGeo.latitude, longitude: scanGeo.longitude })
-      const selected = uniquePoisByName(await selectPois(candidates, language)).sort(byDistance)
+      const selected = uniquePoisByName(await selectPois(candidates, language, categoryFilters)).sort(byDistance)
       const incoming = selected.filter((poi) => !existingNames.has(poiNameKey(poi)))
       if (mode === 'prepend-new' && incoming.length === 0) {
         setStatus('No new spots yet.')
@@ -1330,7 +1472,7 @@ function MainExperience() {
               (p, i, arr) => arr.findIndex((q) => q.id === p.id) === i
             ).slice(0, maxPoiListItems)
           : finalPois
-        await putCachedScan(scanGeo.latitude, scanGeo.longitude, language, mergedForCache)
+        await putCachedScan(scanGeo.latitude, scanGeo.longitude, scanCacheLanguage, mergedForCache)
       }
       lastScanGeoRef.current = scanGeo
       setStatus('Ready.')
@@ -1343,7 +1485,7 @@ function MainExperience() {
 
   async function refreshPoi(poi: PoiSummary) {
     // Clear cached detail text and cached scan entry so both reload fresh
-    await clearCachedScan(selectedGeo.latitude, selectedGeo.longitude, language)
+    await clearCachedScan(selectedGeo.latitude, selectedGeo.longitude, scanCacheLanguage)
     await putCachedDetail(poi.id, language, '')  // overwrite with empty so DetailCard won't serve stale text
     // Also clear from savedPois detailText if bookmarked
     const saved = await db.savedPois.get(poi.id)
@@ -1358,7 +1500,7 @@ function MainExperience() {
       if (useAppStore.getState().activePoi?.id === enriched.id) setActivePoi(enriched)
       // Write updated scan cache with the refreshed POI
       const updatedPois = useAppStore.getState().pois
-      await putCachedScan(selectedGeo.latitude, selectedGeo.longitude, language, updatedPois)
+      await putCachedScan(selectedGeo.latitude, selectedGeo.longitude, scanCacheLanguage, updatedPois)
     } finally {
       setImageLoadingIds((ids) => {
         const next = new Set(ids)
@@ -1385,7 +1527,16 @@ function MainExperience() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [geo?.latitude, geo?.longitude, loading, pois.length])
 
-  const active = useMemo(() => activePoi ?? pois[0], [activePoi, pois])
+  useEffect(() => {
+    if (activePoi && !visiblePois.some((poi) => poi.id === activePoi.id)) {
+      setActivePoi(visiblePois[0])
+    }
+  }, [activePoi?.id, visiblePois, setActivePoi])
+
+  const active = useMemo(() => {
+    if (activePoi && visiblePois.some((poi) => poi.id === activePoi.id)) return activePoi
+    return visiblePois[0]
+  }, [activePoi, visiblePois])
   const locationLabel = locationSource === 'fake'
     ? 'Teleport'
     : selectedGeo.accuracyMeters && selectedGeo.accuracyMeters < 1000
@@ -1396,7 +1547,7 @@ function MainExperience() {
     <main className={`app-shell ${theme}`}>
       <MapPanel
         geo={selectedGeo}
-        pois={pois}
+        pois={visiblePois}
         activePoi={active}
         locationLabel={locationLabel}
         fakeLocationMode={fakeLocationMode}
@@ -1418,6 +1569,7 @@ function MainExperience() {
             <span>Nearby</span>
             <strong>{status}</strong>
           </div>
+          <CategoryFilterPicker selected={categoryFilters} onChange={setCategoryFilters} />
           <LanguagePicker language={language} onChange={setLanguage} />
           <div className="location-control">
             <button className={`icon ${fakeLocationMode ? 'active' : ''}`} onClick={() => setLocationMenuOpen((open) => !open)} aria-label="Choose location mode"><LocateFixed size={19} /></button>
@@ -1435,10 +1587,10 @@ function MainExperience() {
           <button className="icon" onClick={() => setSavedOpen(true)} aria-label="Saved POIs"><Bookmark size={19} /></button>
         </header>
         <div className="poi-list">
-          {pois.length === 0 && (
+          {visiblePois.length === 0 && (
             <div className="empty-state">
               <Play size={24} />
-              <p>{loading ? 'Building your first travel cards...' : 'Tap refresh to scan nearby POIs.'}</p>
+              <p>{loading ? 'Building your first travel cards...' : pois.length > 0 ? 'No POIs match the selected filters.' : 'Tap refresh to scan nearby POIs.'}</p>
               {loading && (
                 <div className="skeleton-card">
                   <div className="skeleton-thumb" />
@@ -1451,7 +1603,7 @@ function MainExperience() {
               )}
             </div>
           )}
-          {pois.map((poi, index) => (
+          {visiblePois.map((poi, index) => (
             <PoiCard
               key={poi.id}
               poi={poi}

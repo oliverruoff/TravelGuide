@@ -124,7 +124,7 @@ async def geo_candidates(payload: CandidateRequest, _: None = Depends(require_au
 @app.post("/api/poi/select")
 async def poi_select(payload: PoiSelectRequest, _: None = Depends(require_auth)):
     try:
-        return await select_pois(settings, payload.candidates, payload.language)
+        return await select_pois(settings, payload.candidates, payload.language, payload.categoryFilters)
     except Exception as e:
         logger.error(f"Error selecting POIs: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to select POIs: {str(e)}")

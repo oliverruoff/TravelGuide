@@ -178,6 +178,27 @@ def travel_candidate_count(candidates: list[RawGeoCandidate]) -> int:
     return sum(1 for candidate in candidates if travel_candidate_score(candidate) > 0)
 
 
+CATEGORY_FILTER_KEYWORDS: dict[str, tuple[str, ...]] = {
+    "museum": ("museum", "gallery", "galerie", "archive", "library", "exhibition", "artwork", "sculpture", "theatre", "theater", "cinema", "opera"),
+    "historic": ("historic", "monument", "memorial", "ruin", "castle", "palace", "fort", "tower", "bridge", "square", "cemetery", "heritage"),
+    "religious": ("church", "chapel", "cathedral", "mosque", "synagogue", "temple", "place_of_worship", "religion", "denomination", "monastery", "abbey"),
+    "nature": ("park", "garden", "forest", "nature", "natural", "reserve", "wildlife", "botanical", "wood", "meadow", "peak", "hill", "mountain"),
+    "water": ("river", "lake", "water", "waterway", "stream", "creek", "pond", "waterfall", "fountain", "canal", "harbour", "harbor", "marina"),
+    "viewpoint": ("viewpoint", "view", "panorama", "observatory", "lookout", "summit"),
+    "food": ("restaurant", "cafe", "bar", "pub", "brewery", "winery", "bistro", "market", "shop", "cuisine", "fast_food"),
+    "trail": ("trail", "path", "hiking", "cycling", "cycleway", "route", "footway", "track", "radweg"),
+    "civic": ("townhall", "town hall", "community", "public", "information", "board", "map", "village", "place", "building", "hall"),
+}
+
+
+def candidate_matches_category_filters(candidate: RawGeoCandidate, category_filters: list[str]) -> bool:
+    filters = [item for item in category_filters if item in CATEGORY_FILTER_KEYWORDS]
+    if not filters:
+        return True
+    tag_blob = " ".join([poi_research_name(candidate), candidate.nativeName or "", *candidate.tags.keys(), *candidate.tags.values()]).lower()
+    return any(any(keyword in tag_blob for keyword in CATEGORY_FILTER_KEYWORDS[filter_id]) for filter_id in filters)
+
+
 def travel_candidate_score(candidate: RawGeoCandidate) -> int:
     tag_blob = " ".join([poi_research_name(candidate), candidate.nativeName or "", *candidate.tags.keys(), *candidate.tags.values()]).lower()
     positive = [
@@ -323,8 +344,12 @@ def heuristic_select(candidates: list[RawGeoCandidate]) -> list[PoiSummary]:
     ]
 
 
-async def select_pois(settings: Settings, candidates: list[RawGeoCandidate], language: str) -> list[PoiSummary]:
+async def select_pois(settings: Settings, candidates: list[RawGeoCandidate], language: str, category_filters: list[str] | None = None) -> list[PoiSummary]:
     if not candidates:
+        return []
+    category_filters = category_filters or []
+    filtered_candidates = [candidate for candidate in candidates if candidate_matches_category_filters(candidate, category_filters)]
+    if not filtered_candidates:
         return []
 
     compact = [
@@ -362,11 +387,12 @@ async def select_pois(settings: Settings, candidates: list[RawGeoCandidate], lan
                 }
             },
         }
-        for c in candidates[:60]
+        for c in filtered_candidates[:60]
     ]
     prompt = render_prompt(
         "poi_select_user.txt",
         language=language,
+        category_filters=", ".join(category_filters) if category_filters else "all categories",
         candidates_json=json.dumps(compact, ensure_ascii=False),
     )
     try:
@@ -379,7 +405,7 @@ async def select_pois(settings: Settings, candidates: list[RawGeoCandidate], lan
         )
         content = response.json()["choices"][0]["message"]["content"]
         items = _extract_json_array(content)
-        by_id = {candidate.id: candidate for candidate in candidates}
+        by_id = {candidate.id: candidate for candidate in filtered_candidates}
         selected: list[PoiSummary] = []
         seen_ids: set[str] = set()
         seen_names: set[str] = set()
@@ -407,9 +433,9 @@ async def select_pois(settings: Settings, candidates: list[RawGeoCandidate], lan
             )
             if len(selected) >= 10:
                 break
-        return selected or heuristic_select(candidates)
+        return selected or heuristic_select(filtered_candidates)
     except Exception:
-        return heuristic_select(candidates)
+        return heuristic_select(filtered_candidates)
 
 
 async def brave_search(settings: Settings, query: str, image: bool = False, count: int = 5) -> dict[str, Any]:

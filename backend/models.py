@@ -41,6 +41,7 @@ class PoiSummary(BaseModel):
 
 class PoiSelectRequest(BaseModel):
     language: str = "en"
+    categoryFilters: list[str] = Field(default_factory=list)
     candidates: list[RawGeoCandidate]
 
 
