@@ -61,19 +61,19 @@ function SimpleMarkdown({ text }: { text: string }) {
   return <>{elements}</>
 }
 
-function getCategoryColorClass(category: string): string {
+function getCategoryColor(category: string): string {
   const lower = (category || '').toLowerCase()
-  if (lower.includes('museum')) return 'cat-museum'
-  if (lower.includes('church') || lower.includes('kirche') || lower.includes('chapel')) return 'cat-religious'
-  if (lower.includes('monument') || lower.includes('memorial') || lower.includes('denkmal')) return 'cat-monument'
-  if (lower.includes('castle') || lower.includes('burg') || lower.includes('schloss') || lower.includes('palace')) return 'cat-castle'
-  if (lower.includes('viewpoint') || lower.includes('aussicht')) return 'cat-viewpoint'
-  if (lower.includes('restaurant') || lower.includes('cafe') || lower.includes('bar')) return 'cat-dining'
-  if (lower.includes('trail') || lower.includes('radweg') || lower.includes('path')) return 'cat-trail'
-  if (lower.includes('river') || lower.includes('lake') || lower.includes('water') || lower.includes('fluss') || lower.includes('see')) return 'cat-water'
-  if (lower.includes('artwork') || lower.includes('sculpture') || lower.includes('galerie') || lower.includes('gallery')) return 'cat-art'
-  if (lower.includes('park') || lower.includes('garden') || lower.includes('garten') || lower.includes('nature')) return 'cat-nature'
-  return 'cat-default'
+  if (lower.includes('museum')) return '#8B5CF6'
+  if (lower.includes('church') || lower.includes('kirche') || lower.includes('chapel')) return '#EC4899'
+  if (lower.includes('monument') || lower.includes('memorial') || lower.includes('denkmal')) return '#A78BFA'
+  if (lower.includes('castle') || lower.includes('burg') || lower.includes('schloss') || lower.includes('palace')) return '#F59E0B'
+  if (lower.includes('viewpoint') || lower.includes('aussicht')) return '#06B6D4'
+  if (lower.includes('restaurant') || lower.includes('cafe') || lower.includes('bar')) return '#84CC16'
+  if (lower.includes('trail') || lower.includes('radweg') || lower.includes('path')) return '#10B981'
+  if (lower.includes('river') || lower.includes('lake') || lower.includes('water') || lower.includes('fluss') || lower.includes('see')) return '#3B82F6'
+  if (lower.includes('artwork') || lower.includes('sculpture') || lower.includes('galerie') || lower.includes('gallery')) return '#D946EF'
+  if (lower.includes('park') || lower.includes('garden') || lower.includes('garten') || lower.includes('nature')) return '#22C55E'
+  return ''
 }
 
 function distanceMeters(a: GeoFix, b: GeoFix) {
@@ -652,7 +652,8 @@ function PoiCard({
 }) {
   return (
     <motion.article
-      className={`poi-card ${active ? 'active' : ''} ${getCategoryColorClass(poi.category)}`}
+      className={`poi-card ${active ? 'active' : ''}`}
+      style={{ '--cat-color': getCategoryColor(poi.category) } as React.CSSProperties}
       initial={{ opacity: 0, y: 16, rotateX: -8 }}
       animate={{ opacity: 1, y: 0, rotateX: 0 }}
       transition={{ delay: index * 0.045 }}
@@ -847,6 +848,7 @@ function DetailCard({ poi, userGeo, onClose }: { poi: PoiSummary; userGeo?: GeoF
     <motion.div className="detail-backdrop" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
       <motion.div
         className="mtg-card-container"
+        style={{ '--cat-color': getCategoryColor(poi.category) } as React.CSSProperties}
         initial={{ y: '110%', rotateX: -12, scale: 0.9 }}
         animate={{ y: 0, rotateX: 0, scale: 1 }}
         exit={{ y: exitY, opacity: 0, scale: 0.92 }}

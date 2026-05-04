@@ -630,7 +630,7 @@ input, select {
   padding: 10px;
   text-align: left;
   background: var(--card-bg);
-  box-shadow: 0 16px 32px var(--shadow), inset 0 1px 0 rgba(255,255,255,0.28);
+  box-shadow: 0 16px 32px var(--shadow), inset 0 1px 0 rgba(255,255,255,0.28), inset -3px 0 0 color-mix(in srgb, var(--cat-color, var(--accent)) 100%, transparent);
   color: var(--ink);
   position: relative;
   overflow: hidden;
@@ -639,7 +639,7 @@ input, select {
 .poi-card.active {
   border-color: color-mix(in srgb, var(--accent) 46%, transparent);
   background: var(--card-active-bg);
-  box-shadow: 0 18px 34px var(--shadow), inset 4px 0 0 var(--accent), inset 0 1px 0 rgba(255,255,255,0.22);
+  box-shadow: 0 18px 34px var(--shadow), inset 4px 0 0 var(--accent), inset -3px 0 0 color-mix(in srgb, var(--cat-color, var(--accent)) 100%, transparent), inset 0 1px 0 rgba(255,255,255,0.22);
 }
 .thumb {
   border-radius: 13px;
@@ -689,19 +689,7 @@ input, select {
   min-width: 0;
   overflow: hidden;
 }
-.poi-copy span { color: var(--soft-muted); font-size: 11px; font-weight: 900; text-transform: uppercase; }
-
-/* Category colors — subtle background tints */
-.poi-card.cat-museum      { background: color-mix(in srgb, #8B5CF6 6%, var(--card-bg)); }
-.poi-card.cat-religious   { background: color-mix(in srgb, #EC4899 6%, var(--card-bg)); }
-.poi-card.cat-monument    { background: color-mix(in srgb, #A78BFA 6%, var(--card-bg)); }
-.poi-card.cat-castle      { background: color-mix(in srgb, #F59E0B 6%, var(--card-bg)); }
-.poi-card.cat-viewpoint   { background: color-mix(in srgb, #06B6D4 6%, var(--card-bg)); }
-.poi-card.cat-dining      { background: color-mix(in srgb, #84CC16 6%, var(--card-bg)); }
-.poi-card.cat-trail       { background: color-mix(in srgb, #10B981 6%, var(--card-bg)); }
-.poi-card.cat-water       { background: color-mix(in srgb, #3B82F6 6%, var(--card-bg)); }
-.poi-card.cat-art         { background: color-mix(in srgb, #D946EF 6%, var(--card-bg)); }
-.poi-card.cat-nature      { background: color-mix(in srgb, #22C55E 6%, var(--card-bg)); }
+.poi-copy span { color: var(--cat-color, var(--soft-muted)); font-size: 11px; font-weight: 900; text-transform: uppercase; }
 
 .poi-copy strong {
   display: block;
@@ -1111,11 +1099,11 @@ input, select {
   background:
     linear-gradient(145deg, color-mix(in srgb, var(--surface-strong) 92%, white), var(--surface)),
     var(--detail-bg);
-  border: 1px solid color-mix(in srgb, var(--line) 70%, var(--accent) 18%);
+  border: 1px solid color-mix(in srgb, var(--cat-color, var(--accent)) 38%, transparent);
   box-shadow:
     0 0 0 1px rgba(255,255,255,0.24) inset,
     0 24px 64px var(--deep-shadow),
-    inset 0 0 0 3px color-mix(in srgb, var(--accent-soft) 28%, transparent);
+    inset 0 0 0 3px color-mix(in srgb, var(--cat-color, var(--accent-soft)) 18%, transparent);
   position: relative;
   overflow: hidden;
   height: 100%;
@@ -1154,7 +1142,7 @@ input, select {
   border-bottom: 1px solid var(--line);
   flex-shrink: 0;
   background:
-    linear-gradient(90deg, color-mix(in srgb, var(--accent-soft) 32%, transparent), transparent 62%),
+    linear-gradient(90deg, color-mix(in srgb, var(--cat-color, var(--accent)) 10%, transparent), transparent 62%),
     var(--surface-strong);
 }
 
@@ -1283,12 +1271,12 @@ input, select {
 .mtg-type-text {
   padding: 6px 10px;
   border-radius: 999px;
-  background: color-mix(in srgb, var(--accent-soft) 45%, transparent);
+  background: color-mix(in srgb, var(--cat-color, var(--accent)) 14%, transparent);
   font-size: 10px;
   font-weight: 900;
   letter-spacing: 0;
   text-transform: uppercase;
-  color: var(--ink);
+  color: var(--cat-color, var(--ink));
 }
 
 .mtg-set-symbol {
