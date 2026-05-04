@@ -8,6 +8,8 @@ export type GeoFix = {
 export type RawGeoCandidate = {
   id: string
   name: string
+  researchName?: string | null
+  nativeName?: string | null
   lat: number
   lng: number
   tags: Record<string, string>
@@ -17,6 +19,8 @@ export type RawGeoCandidate = {
 export type PoiSummary = {
   id: string
   name: string
+  researchName?: string | null
+  nativeName?: string | null
   lat: number
   lng: number
   category: string

@@ -3,6 +3,7 @@ import json
 import logging
 import math
 import re
+import unicodedata
 from urllib.parse import quote
 from collections.abc import AsyncIterator
 from functools import lru_cache
@@ -55,13 +56,56 @@ def normalize_name_key(name: str) -> str:
     return re.sub(r"\s+", " ", name.casefold().strip())
 
 
+def poi_research_name(poi: PoiSummary | RawGeoCandidate) -> str:
+    return (poi.researchName or poi.name).strip()
+
+
+def _tag_value(tags: dict[str, Any], *keys: str) -> str | None:
+    for key in keys:
+        value = tags.get(key)
+        if value is not None and str(value).strip():
+            return str(value).strip()
+    return None
+
+
+def _looks_latin(text: str) -> bool:
+    letters = [char for char in text if char.isalpha()]
+    if not letters:
+        return True
+    latin = sum(1 for char in letters if "LATIN" in unicodedata.name(char, "") or ord(char) < 128)
+    return latin / len(letters) >= 0.8
+
+
+def _english_name_from_tags(tags: dict[str, Any]) -> str | None:
+    preferred = _tag_value(tags, "name:en", "int_name", "official_name:en", "alt_name:en")
+    if preferred:
+        return preferred
+    transliterated = _tag_value(
+        tags,
+        "name:latin",
+        "name:Latn",
+        "name:zh-Latn",
+        "name:zh_pinyin",
+        "name:pinyin",
+        "name:ja-Latn",
+        "name:ko-Latn",
+    )
+    if transliterated:
+        return transliterated
+    for key in ("official_name", "alt_name", "name"):
+        value = _tag_value(tags, key)
+        if value and _looks_latin(value):
+            return value
+    return None
+
+
 def dedupe_candidates_by_name(candidates: list[RawGeoCandidate]) -> list[RawGeoCandidate]:
     best_by_name: dict[str, RawGeoCandidate] = {}
-    for candidate in sorted(candidates, key=lambda item: (-travel_candidate_score(item), item.distanceMeters, item.name)):
-        key = normalize_name_key(candidate.name)
+    for candidate in sorted(candidates, key=lambda item: (-travel_candidate_score(item), item.distanceMeters, poi_research_name(item))):
+        key = normalize_name_key(poi_research_name(candidate))
         if key and key not in best_by_name:
             best_by_name[key] = candidate
-    return sorted(best_by_name.values(), key=lambda item: (item.distanceMeters, item.name))
+    return sorted(best_by_name.values(), key=lambda item: (item.distanceMeters, poi_research_name(item)))
 
 
 def normalize_overpass(data: dict[str, Any], origin_lat: float, origin_lng: float) -> list[RawGeoCandidate]:
@@ -70,12 +114,13 @@ def normalize_overpass(data: dict[str, Any], origin_lat: float, origin_lng: floa
 
     for element in data.get("elements", []):
         tags = element.get("tags") or {}
-        name = tags.get("name") or tags.get("official_name") or tags.get("alt_name")
+        native_name = _tag_value(tags, "name")
+        research_name = _english_name_from_tags(tags) or native_name or _tag_value(tags, "official_name", "alt_name")
         lat, lng = _center_for_element(element)
-        if not name or lat is None or lng is None:
+        if not research_name or lat is None or lng is None:
             continue
 
-        key = f"{name.lower().strip()}:{round(lat, 4)}:{round(lng, 4)}"
+        key = f"{research_name.lower().strip()}:{round(lat, 4)}:{round(lng, 4)}"
         if key in seen:
             continue
         seen.add(key)
@@ -84,7 +129,9 @@ def normalize_overpass(data: dict[str, Any], origin_lat: float, origin_lng: floa
         candidates.append(
             RawGeoCandidate(
                 id=raw_id,
-                name=name,
+                name=research_name,
+                researchName=research_name,
+                nativeName=native_name if native_name and native_name != research_name else None,
                 lat=lat,
                 lng=lng,
                 tags={str(k): str(v) for k, v in tags.items() if isinstance(v, (str, int, float, bool))},
@@ -132,7 +179,7 @@ def travel_candidate_count(candidates: list[RawGeoCandidate]) -> int:
 
 
 def travel_candidate_score(candidate: RawGeoCandidate) -> int:
-    tag_blob = " ".join([candidate.name, *candidate.tags.keys(), *candidate.tags.values()]).lower()
+    tag_blob = " ".join([poi_research_name(candidate), candidate.nativeName or "", *candidate.tags.keys(), *candidate.tags.values()]).lower()
     positive = [
         "tourism",
         "information",
@@ -263,6 +310,8 @@ def heuristic_select(candidates: list[RawGeoCandidate]) -> list[PoiSummary]:
         PoiSummary(
             id=item.id,
             name=item.name,
+            researchName=poi_research_name(item),
+            nativeName=item.nativeName,
             lat=item.lat,
             lng=item.lng,
             category=item.tags.get("tourism") or item.tags.get("historic") or item.tags.get("amenity") or item.tags.get("place") or item.tags.get("waterway") or "Local place",
@@ -282,6 +331,8 @@ async def select_pois(settings: Settings, candidates: list[RawGeoCandidate], lan
         {
             "id": c.id,
             "name": c.name,
+            "researchName": poi_research_name(c),
+            "nativeName": c.nativeName,
             "lat": c.lat,
             "lng": c.lng,
             "distanceMeters": c.distanceMeters,
@@ -304,6 +355,10 @@ async def select_pois(settings: Settings, candidates: list[RawGeoCandidate], lan
                     "shop",
                     "cuisine",
                     "description",
+                    "name:en",
+                    "int_name",
+                    "official_name:en",
+                    "alt_name:en",
                 }
             },
         }
@@ -331,7 +386,7 @@ async def select_pois(settings: Settings, candidates: list[RawGeoCandidate], lan
         for item in items:
             candidate_id = str(item.get("id", ""))
             candidate = by_id.get(candidate_id)
-            name_key = normalize_name_key(candidate.name) if candidate else ""
+            name_key = normalize_name_key(poi_research_name(candidate)) if candidate else ""
             if not candidate or candidate_id in seen_ids or name_key in seen_names:
                 continue
             seen_ids.add(candidate_id)
@@ -339,7 +394,9 @@ async def select_pois(settings: Settings, candidates: list[RawGeoCandidate], lan
             selected.append(
                 PoiSummary(
                     id=candidate.id,
-                    name=candidate.name,
+                    name=str(item.get("name") or candidate.name),
+                    researchName=poi_research_name(candidate),
+                    nativeName=candidate.nativeName,
                     lat=candidate.lat,
                     lng=candidate.lng,
                     category=str(item.get("category") or candidate.tags.get("tourism") or candidate.tags.get("amenity") or candidate.tags.get("place") or "Local place"),
@@ -399,16 +456,10 @@ def _strip_markup(text: str) -> str:
 
 
 def _detail_queries(poi: PoiSummary, language: str = "en", city: str | None = None) -> list[str]:
-    name = poi.name.strip()
+    name = poi_research_name(poi)
     compact_name = " ".join(token for token in re.split(r"\s+", name) if token)
     # Quote the city so Brave treats it as a required phrase, not a soft signal
     city_part = f' "{city}"' if city else ""
-    if language.startswith("de"):
-        return [
-            f'"{compact_name}"{city_part}',
-            f'"{compact_name}"{city_part} Geschichte',
-            f'"{compact_name}"{city_part} Sehenswürdigkeit',
-        ]
     return [
         f'"{compact_name}"{city_part}',
         f'"{compact_name}"{city_part} history',
@@ -425,7 +476,8 @@ async def detail_sources(settings: Settings, poi: PoiSummary, language: str = "e
             continue
         results = web.get("web", {}).get("results", [])[:4]
         if city:
-            results = [r for r in results if _result_mentions_city(r, city)]
+            city_results = [r for r in results if _result_mentions_city(r, city)]
+            results = city_results or results
         collected.extend(results)
     return _dedupe_sources(collected)
 
@@ -437,7 +489,7 @@ async def _reverse_geocode_city(lat: float, lng: float) -> str | None:
         async with httpx.AsyncClient(timeout=3, headers=headers) as client:
             resp = await client.get(
                 "https://nominatim.openstreetmap.org/reverse",
-                params={"lat": lat, "lon": lng, "format": "json"},
+                params={"lat": lat, "lon": lng, "format": "json", "accept-language": "en"},
             )
             if resp.status_code != 200:
                 return None
@@ -494,7 +546,7 @@ async def wikipedia_data(
          same-named places in different cities.
     Returns None on any failure or low-confidence match.
     """
-    lang = "de" if language.startswith("de") else "en"
+    lang = "en"
     headers = {"User-Agent": "TravelGuideGenAI/0.1 (local prototype; olive@example.local)"}
     search_query = f"{name} {city}" if city else name
 
@@ -535,11 +587,12 @@ async def wikipedia_data(
             data = summary_resp.json()
             extract = data.get("extract") or ""
 
-            # Gate 2 (strict): city must appear in title or extract
+            # City is a soft disambiguation hint because reverse-geocoded city
+            # names can differ by language/script from English research pages.
             if city:
                 city_lower = city.lower()
                 if city_lower not in title.lower() and city_lower not in extract.lower():
-                    return None
+                    logger.debug("Wikipedia city hint did not match for %s in %s", name, city)
 
             image_url = (data.get("thumbnail") or {}).get("source")
             wiki_url = (
@@ -579,7 +632,7 @@ IMAGE_STOPWORDS = {
 
 
 def _poi_image_tokens(poi: PoiSummary) -> list[str]:
-    tokens = re.findall(r"[a-z0-9äöüß]{4,}", poi.name.lower())
+    tokens = re.findall(r"[a-z0-9]{4,}", poi_research_name(poi).lower())
     return [token for token in tokens if token not in IMAGE_STOPWORDS][:4]
 
 
@@ -640,7 +693,8 @@ async def _pick_best_image(image_results: list[dict[str, Any]], poi: PoiSummary,
 
 
 def fallback_photo_url(poi: PoiSummary) -> str:
-    text = f"{poi.name} {poi.category}".lower()
+    research_text = poi_research_name(poi)
+    text = f"{research_text} {poi.name} {poi.category}".lower()
     if "river" in text or "water" in text or "riverside" in text or "fluss" in text or "kocher" in text or "bach" in text or "see" in text or "lake" in text:
         return "https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=480&q=70"
     if "bridge" in text or "bruck" in text or "brücke" in text or "viaduct" in text:
@@ -690,12 +744,13 @@ async def enrich_poi(settings: Settings, poi: PoiSummary, language: str) -> PoiS
         # Always resolve city first — needed for Wikipedia confidence gate
         city = await _reverse_geocode_city(poi.lat, poi.lng)
         city_suffix = f" {city}" if city else ""
+        research_name = poi_research_name(poi)
 
         # ── Wikipedia-first fast path ──────────────────────────────────────────
         # Try Wikipedia before any Brave call. If we get a confident hit with a
         # non-trivial extract we use it as the sole research source, skipping
         # all Brave searches entirely.
-        wiki = await wikipedia_data(poi.name, city, language)
+        wiki = await wikipedia_data(research_name, city, language)
         wiki_hit = (
             wiki is not None
             and len((wiki.get("extract") or "")) > 80  # require a meaningful extract
@@ -710,9 +765,9 @@ async def enrich_poi(settings: Settings, poi: PoiSummary, language: str) -> PoiS
             }]
         else:
             # ── Brave fallback ─────────────────────────────────────────────────
-            web_query = f'"{poi.name}" {poi.category}{city_suffix}'
-            strict_query = f'"{poi.name}"{city_suffix} photo'
-            broad_query = f'{poi.name} {poi.category}{city_suffix}'
+            web_query = f'"{research_name}" {poi.category}{city_suffix}'
+            strict_query = f'"{research_name}"{city_suffix} photo'
+            broad_query = f'{research_name} {poi.category}{city_suffix}'
 
             web, images = await asyncio.gather(
                 brave_search(settings, web_query),
@@ -737,12 +792,13 @@ async def enrich_poi(settings: Settings, poi: PoiSummary, language: str) -> PoiS
 
             web_results = web.get("web", {}).get("results", [])[:5]
             if city:
-                web_results = [r for r in web_results if _result_mentions_city(r, city)]
+                city_results = [r for r in web_results if _result_mentions_city(r, city)]
+                web_results = city_results or web_results
             snippets = [{"title": r.get("title"), "description": r.get("description"), "url": r.get("url")} for r in web_results]
 
             if not snippets and city:
                 try:
-                    web2 = await brave_search(settings, f'"{poi.name}" {poi.category}{city_suffix}')
+                    web2 = await brave_search(settings, f'"{research_name}" {poi.category}{city_suffix}')
                     web_results2 = web2.get("web", {}).get("results", [])[:5]
                     snippets = [{"title": r.get("title"), "description": r.get("description"), "url": r.get("url")} for r in web_results2]
                 except Exception:
@@ -764,6 +820,8 @@ async def enrich_poi(settings: Settings, poi: PoiSummary, language: str) -> PoiS
                 ],
             )
             metadata = json.loads(response.json()["choices"][0]["message"]["content"])
+            poi.name = metadata.get("name") or poi.name
+            poi.researchName = poi.researchName or research_name
             poi.category = metadata.get("category") or poi.category
             poi.oneLiner = metadata.get("oneLiner") or poi.oneLiner
         except Exception:
@@ -853,10 +911,11 @@ async def complete_detail_text(settings: Settings, poi: PoiSummary, sources: lis
 
 async def stream_detail(settings: Settings, poi: PoiSummary, language: str) -> AsyncIterator[str]:
     city = await _reverse_geocode_city(poi.lat, poi.lng)
+    research_name = poi_research_name(poi)
 
     # Wikipedia-first: if we get a confident hit with a rich extract, use it
     # directly and skip all Brave searches for the detail text too.
-    wiki = await wikipedia_data(poi.name, city, language)
+    wiki = await wikipedia_data(research_name, city, language)
     wiki_extract_rich = wiki is not None and len((wiki.get("extract") or "")) > 200
 
     if wiki_extract_rich:

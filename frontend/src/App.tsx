@@ -96,7 +96,7 @@ function formatDistance(meters: number): string {
 }
 
 function poiNameKey(poi: PoiSummary) {
-  return poi.name.trim().toLowerCase().replace(/\s+/g, ' ')
+  return (poi.researchName ?? poi.name).trim().toLowerCase().replace(/\s+/g, ' ')
 }
 
 function mergeIncomingPois(current: PoiSummary[], incoming: PoiSummary[]) {
@@ -591,7 +591,7 @@ function cleanOneLiner(text: string) {
 }
 
 function fallbackImageForPoi(poi: PoiSummary) {
-  const text = `${poi.name} ${poi.category}`.toLowerCase()
+  const text = `${poi.researchName ?? poi.name} ${poi.name} ${poi.category}`.toLowerCase()
   if (text.includes('river') || text.includes('water') || text.includes('fluss') || text.includes('kocher')) {
     return 'https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=640&q=70'
   }
@@ -1191,7 +1191,7 @@ function MainExperience() {
 
   async function confirmRescan() {
     setRescanConfirmOpen(false)
-    await clearCachedScan(selectedGeo.latitude, selectedGeo.longitude)
+    await clearCachedScan(selectedGeo.latitude, selectedGeo.longitude, language)
     scan('replace', selectedGeo)
   }
 
@@ -1213,7 +1213,7 @@ function MainExperience() {
     try {
       if (mode === 'replace') {
         // Check scan cache before hitting the backend
-        const cached = await getCachedScan(scanGeo.latitude, scanGeo.longitude)
+        const cached = await getCachedScan(scanGeo.latitude, scanGeo.longitude, language)
         if (cached) {
           setPois(cached.pois)
           if (cached.pois.length > 0) setActivePoi(cached.pois[0])
@@ -1297,7 +1297,7 @@ function MainExperience() {
               (p, i, arr) => arr.findIndex((q) => q.id === p.id) === i
             ).slice(0, maxPoiListItems)
           : finalPois
-        await putCachedScan(scanGeo.latitude, scanGeo.longitude, mergedForCache)
+        await putCachedScan(scanGeo.latitude, scanGeo.longitude, language, mergedForCache)
       }
       lastScanGeoRef.current = scanGeo
       setStatus('Ready.')
@@ -1310,7 +1310,7 @@ function MainExperience() {
 
   async function refreshPoi(poi: PoiSummary) {
     // Clear cached detail text and cached scan entry so both reload fresh
-    await clearCachedScan(selectedGeo.latitude, selectedGeo.longitude)
+    await clearCachedScan(selectedGeo.latitude, selectedGeo.longitude, language)
     await putCachedDetail(poi.id, language, '')  // overwrite with empty so DetailCard won't serve stale text
     // Also clear from savedPois detailText if bookmarked
     const saved = await db.savedPois.get(poi.id)
@@ -1325,7 +1325,7 @@ function MainExperience() {
       if (useAppStore.getState().activePoi?.id === enriched.id) setActivePoi(enriched)
       // Write updated scan cache with the refreshed POI
       const updatedPois = useAppStore.getState().pois
-      await putCachedScan(selectedGeo.latitude, selectedGeo.longitude, updatedPois)
+      await putCachedScan(selectedGeo.latitude, selectedGeo.longitude, language, updatedPois)
     } finally {
       setImageLoadingIds((ids) => {
         const next = new Set(ids)

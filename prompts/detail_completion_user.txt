@@ -1,4 +1,5 @@
 Write a polished mobile travel guide text in {language} for this place.
+The place JSON includes researchName for English research identity and name for the localized display title.
 The first sentence must be complete and must start with the exact place name: {poi_name}.
 Do not start with a sentence fragment, dangling clause, pronoun, article, quote continuation, or mid-thought.
 Never use the terms POI, category, metadata, map data, source data, or available sources in the user-facing text.

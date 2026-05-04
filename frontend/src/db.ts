@@ -9,6 +9,7 @@ export type StoredPoi = PoiSummary & {
 
 export type CachedScan = {
   locationKey: string
+  language?: string
   pois: PoiSummary[]
   cachedAt: number
 }
@@ -41,6 +42,13 @@ db.version(2).stores({
   poiDetailCache: 'key, poiId, language, cachedAt'
 })
 
+db.version(3).stores({
+  savedPois: 'id, savedAt, visitedAt',
+  achievements: 'id, unlockedAt, relatedPoiId',
+  poiCache: 'locationKey, language, cachedAt',
+  poiDetailCache: 'key, poiId, language, cachedAt'
+})
+
 // ---------------------------------------------------------------------------
 // Geo rounding helpers
 // ---------------------------------------------------------------------------
@@ -50,20 +58,30 @@ export function roundGeo(lat: number, lng: number): string {
   return `${lat.toFixed(3)},${lng.toFixed(3)}`
 }
 
+function scanKey(lat: number, lng: number, language: string): string {
+  return `${roundGeo(lat, lng)}|${language}`
+}
+
 // ---------------------------------------------------------------------------
 // Scan cache helpers
 // ---------------------------------------------------------------------------
 
-export async function getCachedScan(lat: number, lng: number): Promise<CachedScan | undefined> {
-  return db.poiCache.get(roundGeo(lat, lng))
+export async function getCachedScan(lat: number, lng: number, language: string): Promise<CachedScan | undefined> {
+  return db.poiCache.get(scanKey(lat, lng, language))
 }
 
-export async function putCachedScan(lat: number, lng: number, pois: PoiSummary[]): Promise<void> {
-  await db.poiCache.put({ locationKey: roundGeo(lat, lng), pois, cachedAt: Date.now() })
+export async function putCachedScan(lat: number, lng: number, language: string, pois: PoiSummary[]): Promise<void> {
+  await db.poiCache.put({ locationKey: scanKey(lat, lng, language), language, pois, cachedAt: Date.now() })
 }
 
-export async function clearCachedScan(lat: number, lng: number): Promise<void> {
-  await db.poiCache.delete(roundGeo(lat, lng))
+export async function clearCachedScan(lat: number, lng: number, language?: string): Promise<void> {
+  if (language) {
+    await db.poiCache.delete(scanKey(lat, lng, language))
+    return
+  }
+  const prefix = `${roundGeo(lat, lng)}|`
+  const entries = await db.poiCache.toArray()
+  await db.poiCache.bulkDelete(entries.filter((entry) => entry.locationKey === roundGeo(lat, lng) || entry.locationKey.startsWith(prefix)).map((entry) => entry.locationKey))
 }
 
 // ---------------------------------------------------------------------------

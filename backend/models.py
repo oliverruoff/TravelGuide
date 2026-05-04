@@ -17,6 +17,8 @@ class CandidateRequest(BaseModel):
 class RawGeoCandidate(BaseModel):
     id: str
     name: str
+    researchName: str | None = None
+    nativeName: str | None = None
     lat: float
     lng: float
     tags: dict[str, str] = Field(default_factory=dict)
@@ -26,6 +28,8 @@ class RawGeoCandidate(BaseModel):
 class PoiSummary(BaseModel):
     id: str
     name: str
+    researchName: str | None = None
+    nativeName: str | None = None
     lat: float
     lng: float
     category: str = "Place"
