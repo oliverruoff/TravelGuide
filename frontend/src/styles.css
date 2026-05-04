@@ -857,12 +857,24 @@ input, select {
 }
 
 .empty-state {
-  min-height: 180px;
+  min-height: min(360px, 100%);
   display: grid;
-  place-items: center;
-  align-content: center;
+  justify-items: center;
+  align-content: start;
   gap: 8px;
+  padding: 42px 14px 24px;
   color: var(--muted);
+  text-align: center;
+}
+
+.empty-state svg {
+  display: block;
+  flex: 0 0 auto;
+  overflow: visible;
+}
+
+.empty-state p {
+  margin-bottom: 0;
 }
 
 .skeleton-card {
