@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 import math
@@ -16,6 +17,10 @@ from .settings import Settings
 
 logger = logging.getLogger(__name__)
 
+# In-memory enrichment cache: (poi_id, language) → enriched PoiSummary
+# Cleared only on process restart. Avoids re-running all HTTP + LLM calls
+# for the same POI when the user moves slightly and rescans.
+_enrich_cache: dict[tuple[str, str], "PoiSummary"] = {}
 
 PROMPTS_DIR = Path(__file__).resolve().parents[1] / "prompts"
 
@@ -451,21 +456,33 @@ async def _reverse_geocode_city(lat: float, lng: float) -> str | None:
 async def wikipedia_image(query: str, language: str = "en", city: str | None = None) -> str | None:
     lang = "de" if language.startswith("de") else "en"
     headers = {"User-Agent": "TravelGuideGenAI/0.1 (local prototype; olive@example.local)"}
-    async with httpx.AsyncClient(timeout=15, headers=headers, follow_redirects=True) as client:
-        variants = [query, query.replace(" ", "_")]
-        if city:
-            variants.append(f"{query} {city}")
-            variants.append(f"{query} {city}".replace(" ", "_"))
-        if lang == "de":
-            variants.append(f"{query}_(Berlin)")
-        for title in variants:
+
+    async def _fetch_variant(client: httpx.AsyncClient, title: str) -> str | None:
+        try:
             summary = await client.get(f"https://{lang}.wikipedia.org/api/rest_v1/page/summary/{quote(title)}")
             if summary.status_code != 200:
-                continue
+                return None
             data = summary.json()
-            image_url = (data.get("thumbnail") or {}).get("source") or (data.get("originalimage") or {}).get("source")
-            if image_url:
-                return image_url
+            return (data.get("thumbnail") or {}).get("source") or (data.get("originalimage") or {}).get("source")
+        except Exception:
+            return None
+
+    async with httpx.AsyncClient(timeout=8, headers=headers, follow_redirects=True) as client:
+        # Build two batches: first try the most-likely variants in parallel,
+        # then fall back to city-qualified variants if needed.
+        primary = [query, query.replace(" ", "_")]
+        secondary = []
+        if city:
+            secondary.append(f"{query} {city}")
+            secondary.append(f"{query} {city}".replace(" ", "_"))
+
+        for batch in [primary, secondary]:
+            if not batch:
+                continue
+            results = await asyncio.gather(*[_fetch_variant(client, t) for t in batch])
+            found = next((r for r in results if r), None)
+            if found:
+                return found
     return None
 
 
@@ -594,39 +611,68 @@ def fallback_photo_url(poi: PoiSummary) -> str:
 
 
 async def enrich_poi(settings: Settings, poi: PoiSummary, language: str) -> PoiSummary:
-    # Resolve city once via reverse geocoding — used to make all image queries more specific
-    city = await _reverse_geocode_city(poi.lat, poi.lng)
-    city_suffix = f" {city}" if city else ""
+    # Return cached result immediately if available
+    cache_key = (poi.id, language)
+    if cache_key in _enrich_cache:
+        return _enrich_cache[cache_key]
 
-    strict_query = f'"{poi.name}"{city_suffix} photo'
-    broad_query = f'{poi.name} {poi.category}{city_suffix}'
-    web_query = f'"{poi.name}" {poi.category}{city_suffix}'
     try:
-        web = await brave_search(settings, web_query)
-        # Pass 1: strict quoted query + city, 10 results
+        # Fire Nominatim + Brave web + Brave image pass 1 all at once
+        city_suffix_placeholder = ""
+        strict_query_initial = f'"{poi.name}" photo'
+        web_query_initial = f'"{poi.name}" {poi.category}'
+
+        city, web, images = await asyncio.gather(
+            _reverse_geocode_city(poi.lat, poi.lng),
+            brave_search(settings, web_query_initial),
+            brave_search(settings, strict_query_initial, image=True, count=10),
+            return_exceptions=True,
+        )
+
+        # Normalize gather results (may be exceptions)
+        city = city if isinstance(city, str) else None
+        web = web if isinstance(web, dict) else {}
+        images = images if isinstance(images, dict) else {}
+
+        city_suffix = f" {city}" if city else ""
+        strict_query = f'"{poi.name}"{city_suffix} photo'
+        broad_query = f'{poi.name} {poi.category}{city_suffix}'
+
         image_url = None
         try:
-            images = await brave_search(settings, strict_query, image=True, count=10)
             image_url = await _pick_best_image(images.get("results", []), poi)
         except Exception:
             pass
-        # Pass 2: broader unquoted query + city if pass 1 found nothing
+
+        # Pass 2: broader query (only if pass 1 failed)
         if not image_url:
             try:
                 images2 = await brave_search(settings, broad_query, image=True, count=10)
                 image_url = await _pick_best_image(images2.get("results", []), poi)
             except Exception:
                 pass
-        # Pass 3: Wikipedia + city hint
+
+        # Pass 3: Wikipedia (parallel variant lookup, only if still no image)
         if not image_url:
             try:
                 image_url = await wikipedia_image(poi.name, language, city=city)
             except Exception:
                 image_url = None
+
         web_results = web.get("web", {}).get("results", [])[:5]
         if city:
             web_results = [r for r in web_results if _result_mentions_city(r, city)]
         snippets = [{"title": r.get("title"), "description": r.get("description"), "url": r.get("url")} for r in web_results]
+
+        # Re-run web search with city if first pass had no city and returned no results
+        if not snippets and city:
+            try:
+                web2 = await brave_search(settings, f'"{poi.name}" {poi.category}{city_suffix}')
+                web_results2 = web2.get("web", {}).get("results", [])[:5]
+                snippets = [{"title": r.get("title"), "description": r.get("description"), "url": r.get("url")} for r in web_results2]
+            except Exception:
+                pass
+
         prompt = render_prompt(
             "poi_enrich_user.txt",
             language=language,
@@ -647,10 +693,13 @@ async def enrich_poi(settings: Settings, poi: PoiSummary, language: str) -> PoiS
         except Exception:
             if snippets and snippets[0].get("description"):
                 poi.oneLiner = snippets[0]["description"][:140]
+
         poi.imageUrl = image_url or poi.imageUrl
         if not poi.imageUrl:
             poi.imageUrl = fallback_photo_url(poi)
         poi.sourceRefs = [r["url"] for r in snippets if r.get("url")]
+
+        _enrich_cache[cache_key] = poi
         return poi
     except Exception:
         if not poi.imageUrl:

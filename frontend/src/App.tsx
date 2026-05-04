@@ -1229,6 +1229,8 @@ function MainExperience() {
       const poisToLoad = mode === 'replace' ? selected : incoming
       const loadedIncoming: PoiSummary[] = []
       setStatus(mode === 'replace' ? `Loading ${poisToLoad.length} cards...` : `Loading ${poisToLoad.length} new cards...`)
+
+      // Show all skeleton cards immediately, then enrich up to 3 at a time
       for (const poi of poisToLoad) {
         if (mode === 'replace') {
           setPois([...useAppStore.getState().pois, poi])
@@ -1236,11 +1238,13 @@ function MainExperience() {
           loadedIncoming.push(poi)
           setPois(mergeIncomingPois(useAppStore.getState().pois, loadedIncoming))
         }
-        if (!useAppStore.getState().activePoi) {
-          setActivePoi(poi)
-        }
+        if (!useAppStore.getState().activePoi) setActivePoi(poi)
         setImageLoadingIds((ids) => new Set(ids).add(poi.id))
-        setStatus(`Loading ${poi.name}...`)
+      }
+
+      // Concurrency-limited parallel enrichment (max 3 at once)
+      const CONCURRENCY = 3
+      const enrichOne = async (poi: PoiSummary) => {
         try {
           const enriched = await enrichPoi(poi, language)
           if (mode === 'prepend-new') {
@@ -1248,17 +1252,17 @@ function MainExperience() {
             if (index >= 0) loadedIncoming[index] = enriched
           }
           setPois(useAppStore.getState().pois.map((current) => current.id === enriched.id ? enriched : current).slice(0, maxPoiListItems))
-          if (useAppStore.getState().activePoi?.id === enriched.id) {
-            setActivePoi(enriched)
-          }
+          if (useAppStore.getState().activePoi?.id === enriched.id) setActivePoi(enriched)
           setDetailPoi((current) => current?.id === enriched.id ? enriched : current)
         } finally {
-          setImageLoadingIds((ids) => {
-            const next = new Set(ids)
-            next.delete(poi.id)
-            return next
-          })
+          setImageLoadingIds((ids) => { const next = new Set(ids); next.delete(poi.id); return next })
         }
+      }
+
+      // Process in chunks of CONCURRENCY
+      for (let i = 0; i < poisToLoad.length; i += CONCURRENCY) {
+        const chunk = poisToLoad.slice(i, i + CONCURRENCY)
+        await Promise.all(chunk.map(enrichOne))
       }
       // Persist the final enriched POI list to the scan cache
       const finalPois = useAppStore.getState().pois
