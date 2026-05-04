@@ -108,6 +108,7 @@ input, select {
   --thumb-bg: linear-gradient(135deg, #5d5a54, #c89a7d);
   width: min(100vw, 460px);
   height: 100vh;
+  height: 100dvh;
   margin: 0 auto;
   background: var(--app-bg);
   color: var(--ink);
@@ -408,6 +409,7 @@ input, select {
 }
 
 .poi-pin {
+  --pin-color: var(--cat-color, #215fb8);
   border: 0;
   padding: 0;
   min-width: 56px;
@@ -416,10 +418,12 @@ input, select {
   display: flex;
   align-items: center;
   gap: 0;
-  background: linear-gradient(180deg, #f7fbff, #dce9ee);
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.92), rgba(255,255,255,0.76)),
+    color-mix(in srgb, var(--pin-color) 34%, #f7fbff);
   color: #111816;
   border-radius: 0 999px 999px 0;
-  box-shadow: 0 10px 22px rgba(0,0,0,0.22), inset 0 1px 0 rgba(255,255,255,0.85);
+  box-shadow: 0 10px 22px rgba(0,0,0,0.22), inset 0 0 0 1px color-mix(in srgb, var(--pin-color) 22%, transparent), inset 0 1px 0 rgba(255,255,255,0.85);
   position: absolute;
   left: 3px;
   bottom: -2px;
@@ -453,7 +457,7 @@ input, select {
   filter: drop-shadow(0 3px 4px rgba(0,0,0,0.22));
 }
 .poi-pin path {
-  fill: #215fb8;
+  fill: var(--pin-color);
   stroke: #fff;
   stroke-width: 2.2;
 }
@@ -472,15 +476,17 @@ input, select {
   pointer-events: none;
 }
 .poi-pin.active {
-  background: linear-gradient(180deg, #eaf5ff, #cfe7ff);
-  box-shadow: 0 12px 26px rgba(28, 91, 177, 0.34), inset 0 0 0 2px rgba(33, 95, 184, 0.22), inset 0 1px 0 rgba(255,255,255,0.9);
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.96), rgba(255,255,255,0.8)),
+    color-mix(in srgb, var(--pin-color) 48%, #f7fbff);
+  box-shadow: 0 12px 28px color-mix(in srgb, var(--pin-color) 44%, rgba(0,0,0,0.24)), inset 0 0 0 2px color-mix(in srgb, var(--pin-color) 36%, transparent), inset 0 1px 0 rgba(255,255,255,0.9);
   z-index: 2;
 }
 .poi-pin.active path {
-  fill: #104fba;
+  fill: color-mix(in srgb, var(--pin-color) 88%, #111816);
 }
 .poi-pin.active span {
-  color: #0d376f;
+  color: color-mix(in srgb, var(--pin-color) 54%, #111816);
 }
 
 .user-marker {
@@ -511,13 +517,16 @@ input, select {
   min-height: 0;
   position: relative;
   z-index: 3;
-  padding: 16px 14px 24px;
+  padding: 16px 14px max(24px, env(safe-area-inset-bottom));
   border-radius: 24px 24px 0 0;
   background: var(--panel-bg);
   box-shadow: 0 -18px 46px var(--shadow);
+  display: flex;
+  flex-direction: column;
 }
 
 .toolbar {
+  flex: 0 0 auto;
   display: grid;
   grid-template-columns: 1fr 42px 42px 42px 42px;
   gap: 9px;
@@ -687,11 +696,15 @@ input, select {
 }
 
 .poi-list {
-  height: calc(100% - 58px);
+  flex: 1 1 auto;
+  min-height: 0;
   overflow: auto;
-  padding: 3px 2px 34px;
+  padding: 3px 2px max(96px, calc(34px + env(safe-area-inset-bottom)));
+  scroll-padding-bottom: max(96px, calc(34px + env(safe-area-inset-bottom)));
   display: grid;
   gap: 12px;
+  align-content: start;
+  -webkit-overflow-scrolling: touch;
 }
 
 .poi-card {

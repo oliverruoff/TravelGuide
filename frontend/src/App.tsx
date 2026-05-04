@@ -474,6 +474,7 @@ function MapPanel({
       node.type = 'button'
       node.className = 'poi-pin'
       node.title = poi.name
+      node.style.setProperty('--cat-color', getCategoryColor(poi.category) || 'var(--accent)')
       node.innerHTML = `
         <span class="poi-pin-icon">
           <svg viewBox="0 0 32 44" aria-hidden="true">
