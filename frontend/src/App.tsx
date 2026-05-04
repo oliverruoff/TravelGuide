@@ -90,6 +90,9 @@ function SimpleMarkdown({ text }: { text: string }) {
     } else if (trimmed.startsWith('## ')) {
       flushList()
       elements.push(<h2 key={key++}>{renderInline(trimmed.slice(3))}</h2>)
+    } else if (trimmed.startsWith('# ')) {
+      flushList()
+      elements.push(<h1 key={key++}>{renderInline(trimmed.slice(2))}</h1>)
     } else if (trimmed.startsWith('- ') || trimmed.startsWith('* ')) {
       listItems.push(<li key={key++}>{renderInline(trimmed.slice(2))}</li>)
     } else if (trimmed === '') {
@@ -1188,24 +1191,33 @@ function LanguagePicker({ language, onChange }: { language: string; onChange: (l
 
 function CategoryFilterPicker({
   selected,
+  open,
+  onOpenChange,
+}: {
+  selected: CategoryFilterId[]
+  open: boolean
+  onOpenChange: (open: boolean) => void
+}) {
+  return (
+    <div className="filter-picker">
+      <button className={`icon filter-trigger ${selected.length > 0 ? 'filled' : ''}`} onClick={() => onOpenChange(!open)} aria-label="Filter POI categories">
+        <Filter size={18} />
+      </button>
+    </div>
+  )
+}
+
+function CategoryFilterModal({
+  selected,
   onChange,
+  onClose,
 }: {
   selected: CategoryFilterId[]
   onChange: (filters: CategoryFilterId[]) => void
+  onClose: () => void
 }) {
-  const [open, setOpen] = useState(false)
-  const ref = useRef<HTMLDivElement>(null)
   const selectedSet = useMemo(() => new Set(selected), [selected])
   const allSelected = selected.length === ALL_CATEGORY_FILTERS.length
-
-  useEffect(() => {
-    if (!open) return
-    function handleClick(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
-    }
-    document.addEventListener('mousedown', handleClick)
-    return () => document.removeEventListener('mousedown', handleClick)
-  }, [open])
 
   function setFilters(next: CategoryFilterId[]) {
     localStorage.setItem(categoryFilterStorageKey, JSON.stringify(next))
@@ -1220,42 +1232,41 @@ function CategoryFilterPicker({
   }
 
   return (
-    <div className="filter-picker" ref={ref}>
-      <button className={`icon filter-trigger ${!allSelected ? 'active' : ''}`} onClick={() => setOpen((value) => !value)} aria-label="Filter POI categories">
-        <Filter size={18} />
-      </button>
-      {open && (
-        <>
-          <button className="filter-backdrop" onClick={() => setOpen(false)} aria-label="Close category filters" />
-          <div className="filter-popover">
-            <div className="filter-popover-head">
-              <strong>Categories</strong>
-              <button onClick={() => setFilters(allSelected ? [] : ALL_CATEGORY_FILTERS)}>
-                {allSelected ? 'Clear' : 'All'}
-              </button>
+    <motion.div className="detail-backdrop filter-backdrop" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={onClose}>
+      <motion.div
+        className="filter-popover"
+        initial={{ opacity: 0, scale: 0.96 }}
+        animate={{ opacity: 1, scale: 1 }}
+        exit={{ opacity: 0, scale: 0.96 }}
+        transition={{ duration: 0.16 }}
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="filter-popover-head">
+          <strong>Categories</strong>
+          <button onClick={() => setFilters(allSelected ? [] : ALL_CATEGORY_FILTERS)}>
+            {allSelected ? 'Clear' : 'All'}
+          </button>
+        </div>
+        {CATEGORY_FILTER_GROUPS.map((group) => (
+          <section key={group.title} className="filter-group">
+            <p>{group.title}</p>
+            <div className="filter-options">
+              {group.items.map((item) => (
+                <label key={item.id} className="filter-option" style={{ '--filter-color': item.color } as React.CSSProperties}>
+                  <input
+                    type="checkbox"
+                    checked={selectedSet.has(item.id)}
+                    onChange={() => toggleFilter(item.id)}
+                  />
+                  <span aria-hidden="true" />
+                  {item.label}
+                </label>
+              ))}
             </div>
-            {CATEGORY_FILTER_GROUPS.map((group) => (
-              <section key={group.title} className="filter-group">
-                <p>{group.title}</p>
-                <div className="filter-options">
-                  {group.items.map((item) => (
-                    <label key={item.id} className="filter-option" style={{ '--filter-color': item.color } as React.CSSProperties}>
-                      <input
-                        type="checkbox"
-                        checked={selectedSet.has(item.id)}
-                        onChange={() => toggleFilter(item.id)}
-                      />
-                      <span aria-hidden="true" />
-                      {item.label}
-                    </label>
-                  ))}
-                </div>
-              </section>
-            ))}
-          </div>
-        </>
-      )}
-    </div>
+          </section>
+        ))}
+      </motion.div>
+    </motion.div>
   )
 }
 
@@ -1269,6 +1280,7 @@ function MainExperience() {
   const [locationMenuOpen, setLocationMenuOpen] = useState(false)
   const [locationInfoOpen, setLocationInfoOpen] = useState(false)
   const [rescanConfirmOpen, setRescanConfirmOpen] = useState(false)
+  const [categoryFilterOpen, setCategoryFilterOpen] = useState(false)
   const [fakeLocationMode, setFakeLocationMode] = useState(false)
   const [categoryFilters, setCategoryFilters] = useState<CategoryFilterId[]>(readStoredCategoryFilters)
   const [locationSource, setLocationSource] = useState<'gps' | 'demo' | 'fake'>(() => readSavedFakeGeo() ? 'fake' : 'demo')
@@ -1572,7 +1584,7 @@ function MainExperience() {
             <span>Nearby</span>
             <strong>{status}</strong>
           </div>
-          <CategoryFilterPicker selected={categoryFilters} onChange={setCategoryFilters} />
+          <CategoryFilterPicker selected={categoryFilters} open={categoryFilterOpen} onOpenChange={setCategoryFilterOpen} />
           <LanguagePicker language={language} onChange={setLanguage} />
           <div className="location-control">
             <button className={`icon ${fakeLocationMode ? 'active' : ''}`} onClick={() => setLocationMenuOpen((open) => !open)} aria-label="Choose location mode"><LocateFixed size={19} /></button>
@@ -1624,6 +1636,7 @@ function MainExperience() {
         </div>
       </section>
       <AnimatePresence>{detailPoi && <DetailCard poi={detailPoi} userGeo={selectedGeo} onClose={() => setDetailPoi(undefined)} />}</AnimatePresence>
+      <AnimatePresence>{categoryFilterOpen && <CategoryFilterModal selected={categoryFilters} onChange={setCategoryFilters} onClose={() => setCategoryFilterOpen(false)} />}</AnimatePresence>
       <AnimatePresence>{savedOpen && <SavedDrawer onClose={() => setSavedOpen(false)} onOpenGuide={setDetailPoi} />}</AnimatePresence>
       <AnimatePresence>
         {rescanConfirmOpen && (
