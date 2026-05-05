@@ -735,41 +735,38 @@ function PoiCard({
   onOpen: () => void
   onRefresh?: () => void
 }) {
-  const cardRef = useRef<HTMLElement>(null)
+  const snapRef = useRef<HTMLDivElement>(null)
   const listRef = useContext(ListRefContext)
 
-  // Scroll-linked 3D transforms: track this card's position inside the list container
+  // Track this card's position inside the scroll container.
+  // We measure the OUTER snap div so the scroll position is stable.
   const { scrollYProgress } = useScroll({
-    target: cardRef,
+    target: snapRef,
     container: listRef,
     offset: ['start end', 'end start'],
   })
 
-  // Map scroll progress [0=entering from bottom, 0.5=centered, 1=exiting top]
-  const scale    = useTransform(scrollYProgress, [0, 0.35, 0.5, 0.65, 1], [0.78, 0.93, 1.0, 0.93, 0.78])
-  const rotateX  = useTransform(scrollYProgress, [0, 0.35, 0.5, 0.65, 1], [18,   5,   0,   -5,  -18])
-  const opacity  = useTransform(scrollYProgress, [0, 0.2,  0.4, 0.6,  0.8, 1],  [0.0, 0.55, 1.0, 1.0, 0.55, 0.0])
-  const y        = useTransform(scrollYProgress, [0, 0.5, 1], [28, 0, -28])
+  // Visual-only transforms applied to the INNER article, not the snap target.
+  // No `y` — vertical translation fights scroll-snap and causes jumping.
+  const scale   = useTransform(scrollYProgress, [0, 0.35, 0.5, 0.65, 1], [0.82, 0.94, 1.0, 0.94, 0.82])
+  const opacity = useTransform(scrollYProgress, [0, 0.25, 0.4, 0.6, 0.75, 1], [0.3, 0.7, 1.0, 1.0, 0.7, 0.3])
 
   function handleSelect() {
     onSelect()
-    // Snap this card to the center of the list on tap
-    cardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    snapRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
   }
 
   return (
+    // Outer div: stable snap target — zero transforms, just height + margin
+    <div
+      ref={snapRef}
+      className="poi-card-snap"
+      style={{ '--cat-color': getCategoryColor(poi.category) } as React.CSSProperties}
+    >
+    {/* Inner article: visual transforms only, never affects layout */}
     <motion.article
-      ref={cardRef}
       className={`poi-card ${active ? 'active' : ''}`}
-      style={{
-        '--cat-color': getCategoryColor(poi.category),
-        scale,
-        rotateX,
-        opacity,
-        y,
-        zIndex: active ? 50 : Math.max(1, 40 - index),
-      } as unknown as React.CSSProperties}
-      transition={{ type: 'spring', stiffness: 300, damping: 28 }}
+      style={{ scale, opacity, zIndex: active ? 50 : Math.max(1, 40 - index) } as unknown as React.CSSProperties}
       onClick={handleSelect}
       role="button"
       tabIndex={0}
@@ -812,6 +809,7 @@ function PoiCard({
         </button>
       )}
     </motion.article>
+    </div>
   )
 }
 
