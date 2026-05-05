@@ -755,7 +755,7 @@ function PoiCard({
       <div className="poi-copy">
         <span>{poi.category}</span>
         <strong>{poi.name}</strong>
-        <p>{cleanOneLiner(poi.oneLiner)}</p>
+        {cleanOneLiner(poi.oneLiner) && <p>{cleanOneLiner(poi.oneLiner)}</p>}
       </div>
       <button
         className="card-detail-button"
