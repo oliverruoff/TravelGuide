@@ -717,7 +717,6 @@ function PoiVisual({ poi, loading, large = false }: { poi: PoiSummary; loading?:
 
 function PoiCard({
   poi,
-  position = 'below',
   active,
   imageLoading,
   onSelect,
@@ -725,7 +724,6 @@ function PoiCard({
   onRefresh,
 }: {
   poi: PoiSummary
-  position?: 'above' | 'centered' | 'below'
   active: boolean
   imageLoading?: boolean
   onSelect: () => void
@@ -734,7 +732,7 @@ function PoiCard({
 }) {
   return (
     <article
-      className={`poi-card ${active ? 'active' : ''} ${position}`}
+      className={`poi-card${active ? ' active' : ''}`}
       style={{ '--cat-color': getCategoryColor(poi.category) } as React.CSSProperties}
       onClick={onSelect}
       role="button"
@@ -1298,33 +1296,44 @@ function MainExperience() {
   const watchIdRef = useRef<number | undefined>(undefined)
   const lastScanGeoRef = useRef<GeoFix | undefined>(undefined)
   const listRef = useRef<HTMLDivElement>(null)
-  const [centeredIndex, setCenteredIndex] = useState(0)
 
-  // Scroll listener: on each scroll find which card's center is closest
-  // to the list container's midpoint. Pure DOM measurement, no transforms read.
+  // Write transforms directly to the DOM every rAF — bypasses React entirely.
+  // This gives per-pixel smooth animation with zero re-renders during scroll.
   useEffect(() => {
     const list = listRef.current
     if (!list) return
     let rafId = 0
-    function update() {
-      const listMid = list!.getBoundingClientRect().top + list!.clientHeight / 2
-      let bestIdx = 0
-      let bestDist = Infinity
-      const children = list!.querySelectorAll<HTMLElement>('.poi-card')
-      children.forEach((card, i) => {
-        const rect = card.getBoundingClientRect()
-        const cardMid = rect.top + rect.height / 2
-        const dist = Math.abs(cardMid - listMid)
-        if (dist < bestDist) { bestDist = dist; bestIdx = i }
+
+    function applyWheelTransforms() {
+      const cards = list!.querySelectorAll<HTMLElement>('.poi-card')
+      if (!cards.length) return
+      const listMid = list!.scrollTop + list!.clientHeight / 2
+      // "influence zone": distance at which a card is fully receded
+      const zone = list!.clientHeight * 0.55
+
+      cards.forEach((card) => {
+        const cardMid = card.offsetTop + card.offsetHeight / 2
+        // signed distance from list midpoint (-=above, +=below)
+        const dist = cardMid - listMid
+        // t: 0 = centered, 1 = fully receded (clamped)
+        const t = Math.min(Math.abs(dist) / zone, 1)
+        // eased so the center feels snappy but edges are smooth
+        const ease = t * t
+        const scale   = 1 - ease * 0.18          // 1.0 → 0.82
+        const rotateX = (dist > 0 ? -1 : 1) * ease * 16  // ±16deg
+        const opacity = 1 - ease * 0.62           // 1.0 → 0.38
+        card.style.transform = `scale(${scale}) rotateX(${rotateX}deg)`
+        card.style.opacity   = String(opacity)
       })
-      setCenteredIndex(bestIdx)
     }
+
     function onScroll() {
       cancelAnimationFrame(rafId)
-      rafId = requestAnimationFrame(update)
+      rafId = requestAnimationFrame(applyWheelTransforms)
     }
+
     list.addEventListener('scroll', onScroll, { passive: true })
-    update() // set initial state without waiting for first scroll
+    applyWheelTransforms() // apply immediately on mount
     return () => { list.removeEventListener('scroll', onScroll); cancelAnimationFrame(rafId) }
   }, [])
 
@@ -1706,11 +1715,10 @@ function MainExperience() {
                 )}
               </div>
             )}
-            {visiblePois.map((poi, index) => (
+            {visiblePois.map((poi) => (
               <PoiCard
                 key={poi.id}
                 poi={poi}
-                position={index < centeredIndex ? 'above' : index > centeredIndex ? 'below' : 'centered'}
                 active={active?.id === poi.id}
                 imageLoading={imageLoadingIds.has(poi.id)}
                 onSelect={() => setActivePoi(poi)}
