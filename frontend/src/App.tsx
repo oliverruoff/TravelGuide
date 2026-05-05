@@ -768,7 +768,7 @@ function PoiCard({
         opacity,
         y,
         zIndex: active ? 50 : Math.max(1, 40 - index),
-      } as React.CSSProperties}
+      } as unknown as React.CSSProperties}
       transition={{ type: 'spring', stiffness: 300, damping: 28 }}
       onClick={handleSelect}
       role="button"
