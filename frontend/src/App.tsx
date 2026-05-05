@@ -1,7 +1,7 @@
 import { AnimatePresence, motion, useDragControls } from 'framer-motion'
 import { Award, Bookmark, Compass, Filter, Info, LocateFixed, MapPin, Moon, MousePointer2, Pin, PinOff, Play, PlusCircle, RefreshCw, Sparkles, Sun, Volume2, X } from 'lucide-react'
 import maplibregl from 'maplibre-gl'
-import { type PointerEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { type PointerEvent, useEffect, useMemo, useRef, useState } from 'react'
 import { enrichPoi, getCandidates, getRuntimeConfig, selectPois, streamDetail, verifyPassword } from './api'
 import { db, markVisited, savePoi, deletePoi, unlockAchievement, getCachedScan, putCachedScan, clearCachedScan, getCachedDetail, putCachedDetail, updatePoiDetailText, type StoredPoi } from './db'
 import { useAppStore } from './store'
@@ -717,49 +717,23 @@ function PoiVisual({ poi, loading, large = false }: { poi: PoiSummary; loading?:
 
 function PoiCard({
   poi,
-  index = 0,
-  centeredIndex = 0,
+  position = 'below',
   active,
   imageLoading,
-  listRef,
   onSelect,
   onOpen,
   onRefresh,
-  onVisible,
 }: {
   poi: PoiSummary
-  index?: number
-  centeredIndex?: number
+  position?: 'above' | 'centered' | 'below'
   active: boolean
   imageLoading?: boolean
-  listRef?: React.RefObject<HTMLDivElement | null>
   onSelect: () => void
   onOpen: () => void
   onRefresh?: () => void
-  onVisible?: (index: number) => void
 }) {
-  const cardRef = useRef<HTMLElement>(null)
-
-  // IntersectionObserver: fires only when visibility crosses threshold.
-  // No continuous scroll reading → no feedback loop possible.
-  useEffect(() => {
-    const el = cardRef.current
-    const root = listRef?.current
-    if (!el || !root || !onVisible) return
-    const observer = new IntersectionObserver(
-      ([entry]) => { if (entry.isIntersecting) onVisible(index) },
-      { root, threshold: 0.5 }
-    )
-    observer.observe(el)
-    return () => observer.disconnect()
-  }, [index, listRef, onVisible])
-
-  // Determine position relative to the currently centered card
-  const position = index < centeredIndex ? 'above' : index > centeredIndex ? 'below' : 'centered'
-
   return (
     <article
-      ref={cardRef}
       className={`poi-card ${active ? 'active' : ''} ${position}`}
       style={{ '--cat-color': getCategoryColor(poi.category) } as React.CSSProperties}
       onClick={onSelect}
@@ -1326,8 +1300,33 @@ function MainExperience() {
   const listRef = useRef<HTMLDivElement>(null)
   const [centeredIndex, setCenteredIndex] = useState(0)
 
-  // Stable callback — useCallback so PoiCard's useEffect deps don't change every render
-  const handleCardVisible = useCallback((index: number) => setCenteredIndex(index), [])
+  // Scroll listener: on each scroll find which card's center is closest
+  // to the list container's midpoint. Pure DOM measurement, no transforms read.
+  useEffect(() => {
+    const list = listRef.current
+    if (!list) return
+    let rafId = 0
+    function update() {
+      const listMid = list!.getBoundingClientRect().top + list!.clientHeight / 2
+      let bestIdx = 0
+      let bestDist = Infinity
+      const children = list!.querySelectorAll<HTMLElement>('.poi-card')
+      children.forEach((card, i) => {
+        const rect = card.getBoundingClientRect()
+        const cardMid = rect.top + rect.height / 2
+        const dist = Math.abs(cardMid - listMid)
+        if (dist < bestDist) { bestDist = dist; bestIdx = i }
+      })
+      setCenteredIndex(bestIdx)
+    }
+    function onScroll() {
+      cancelAnimationFrame(rafId)
+      rafId = requestAnimationFrame(update)
+    }
+    list.addEventListener('scroll', onScroll, { passive: true })
+    update() // set initial state without waiting for first scroll
+    return () => { list.removeEventListener('scroll', onScroll); cancelAnimationFrame(rafId) }
+  }, [])
 
   useEffect(() => {
     locationSourceRef.current = locationSource
@@ -1711,18 +1710,15 @@ function MainExperience() {
               <PoiCard
                 key={poi.id}
                 poi={poi}
-                index={index}
-                centeredIndex={centeredIndex}
+                position={index < centeredIndex ? 'above' : index > centeredIndex ? 'below' : 'centered'}
                 active={active?.id === poi.id}
                 imageLoading={imageLoadingIds.has(poi.id)}
-                listRef={listRef}
                 onSelect={() => setActivePoi(poi)}
                 onOpen={() => {
                   setActivePoi(poi)
                   setDetailPoi(poi)
                 }}
                 onRefresh={() => refreshPoi(poi)}
-                onVisible={handleCardVisible}
               />
             ))}
           </div>

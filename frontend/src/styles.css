@@ -924,12 +924,15 @@ input, select {
   min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
-  padding: 12px 10px 120px;
+  /* Top/bottom padding = roughly half the list height so first/last card
+     can scroll to center. 200px is a comfortable static value; the list
+     is typically ~500-600px tall on a phone. */
+  padding: 200px 10px;
   display: flex;
   flex-direction: column;
   -webkit-overflow-scrolling: touch;
-  /* 3D perspective for child rotateX transforms */
-  perspective: 900px;
+  /* Deep perspective gives strong 3D wheel depth to rotateX */
+  perspective: 700px;
   perspective-origin: 50% 50%;
 }
 
@@ -937,7 +940,7 @@ input, select {
   width: 100%;
   height: 144px;
   flex-shrink: 0;
-  margin-bottom: 12px;
+  margin-bottom: 14px;
   border: 1px solid var(--line);
   border-radius: 18px;
   display: grid;
@@ -952,48 +955,65 @@ input, select {
   overflow: hidden;
   outline: none;
   transform-origin: center center;
-  /* Smooth transition for all 3D effects — duration long enough to feel
-     cinematic but short enough not to lag behind fast scrolling */
-  transition: transform 0.35s cubic-bezier(0.25, 0.46, 0.45, 0.94),
-              opacity  0.35s cubic-bezier(0.25, 0.46, 0.45, 0.94),
-              box-shadow 0.35s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  /* Wheel transition: fast enough to track scrolling, smooth enough to feel physical */
+  transition: transform 0.28s cubic-bezier(0.33, 1, 0.68, 1),
+              opacity   0.28s cubic-bezier(0.33, 1, 0.68, 1),
+              box-shadow 0.28s cubic-bezier(0.33, 1, 0.68, 1);
   will-change: transform, opacity;
-
-  /* Default state (before first IntersectionObserver fire): treat as below */
-  transform: scale(0.91) rotateX(-5deg);
-  opacity: 0.55;
-  box-shadow: 0 4px 12px var(--shadow), inset 0 1px 0 rgba(255,255,255,0.18), inset -3px 0 0 color-mix(in srgb, var(--cat-color, var(--accent)) 60%, transparent);
+  /* Default / below: tilted away at bottom of wheel */
+  transform: scale(0.84) rotateX(-14deg);
+  opacity: 0.45;
+  box-shadow: 0 2px 8px var(--shadow),
+              inset 0 1px 0 rgba(255,255,255,0.12),
+              inset -3px 0 0 color-mix(in srgb, var(--cat-color, var(--accent)) 40%, transparent);
 }
 
-/* Card scrolling into view from below */
+/* Coming from below — bottom of the wheel, tilting up into view */
 .poi-card.below {
-  transform: scale(0.91) rotateX(-5deg);
-  opacity: 0.55;
-  box-shadow: 0 4px 12px var(--shadow), inset 0 1px 0 rgba(255,255,255,0.18), inset -3px 0 0 color-mix(in srgb, var(--cat-color, var(--accent)) 60%, transparent);
+  transform: scale(0.84) rotateX(-14deg);
+  opacity: 0.45;
+  box-shadow: 0 2px 8px var(--shadow),
+              inset 0 1px 0 rgba(255,255,255,0.12),
+              inset -3px 0 0 color-mix(in srgb, var(--cat-color, var(--accent)) 40%, transparent);
 }
 
-/* Card that has scrolled past — above the centered card */
+/* Scrolled past — top of the wheel, tilting back away */
 .poi-card.above {
-  transform: scale(0.91) rotateX(5deg);
-  opacity: 0.55;
-  box-shadow: 0 4px 12px var(--shadow), inset 0 1px 0 rgba(255,255,255,0.18), inset -3px 0 0 color-mix(in srgb, var(--cat-color, var(--accent)) 60%, transparent);
+  transform: scale(0.84) rotateX(14deg);
+  opacity: 0.45;
+  box-shadow: 0 2px 8px var(--shadow),
+              inset 0 1px 0 rgba(255,255,255,0.12),
+              inset -3px 0 0 color-mix(in srgb, var(--cat-color, var(--accent)) 40%, transparent);
 }
 
-/* The card most recently in the center of the viewport */
+/* Center of the wheel — front-facing, full size, elevated */
 .poi-card.centered {
-  transform: scale(1) rotateX(0deg);
+  transform: scale(1.0) rotateX(0deg);
   opacity: 1;
-  box-shadow: 0 16px 40px var(--shadow), 0 4px 12px var(--shadow), inset 0 1px 0 rgba(255,255,255,0.32), inset -3px 0 0 color-mix(in srgb, var(--cat-color, var(--accent)) 100%, transparent);
+  box-shadow: 0 20px 48px var(--shadow),
+              0 6px 16px var(--shadow),
+              inset 0 1px 0 rgba(255,255,255,0.34),
+              inset -3px 0 0 color-mix(in srgb, var(--cat-color, var(--accent)) 100%, transparent);
 }
 .poi-card.centered:hover {
-  box-shadow: 0 22px 52px var(--shadow), 0 6px 16px var(--shadow), inset 0 1px 0 rgba(255,255,255,0.36), inset -3px 0 0 color-mix(in srgb, var(--cat-color, var(--accent)) 100%, transparent);
+  box-shadow: 0 26px 60px var(--shadow),
+              0 8px 20px var(--shadow),
+              inset 0 1px 0 rgba(255,255,255,0.38),
+              inset -3px 0 0 color-mix(in srgb, var(--cat-color, var(--accent)) 100%, transparent);
 }
 .poi-card:not(.centered):hover {
-  opacity: 0.75;
+  opacity: 0.65;
 }
 .poi-card.active {
   border-color: color-mix(in srgb, var(--accent) 46%, transparent);
   background: var(--card-active-bg);
+}
+.poi-card.active.centered {
+  box-shadow: 0 22px 52px var(--shadow),
+              0 6px 16px var(--shadow),
+              inset 4px 0 0 var(--accent),
+              inset -3px 0 0 color-mix(in srgb, var(--cat-color, var(--accent)) 100%, transparent),
+              inset 0 1px 0 rgba(255,255,255,0.28);
 }
 .poi-card.active.centered {
   box-shadow: 0 20px 48px var(--shadow), 0 6px 16px var(--shadow), inset 4px 0 0 var(--accent), inset -3px 0 0 color-mix(in srgb, var(--cat-color, var(--accent)) 100%, transparent), inset 0 1px 0 rgba(255,255,255,0.28);
