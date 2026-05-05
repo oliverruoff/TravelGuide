@@ -922,26 +922,26 @@ input, select {
 .poi-list {
   flex: 1 1 auto;
   min-height: 0;
-  overflow: auto;
-  padding: 12px 10px 0;
-  scroll-padding-bottom: max(96px, calc(34px + env(safe-area-inset-bottom)));
-  display: flex;
-  flex-direction: column;
+  overflow-y: auto;
+  overflow-x: hidden;
+  /* Horizontal padding only; vertical padding driven by JS ResizeObserver
+     to always equal half the container height (first/last card centering). */
+  padding: 160px 10px;
+  scroll-snap-type: y mandatory;
+  scroll-padding-top: 50%;
+  scroll-padding-bottom: 50%;
+  perspective: 1000px;
+  perspective-origin: 50% 50%;
   -webkit-overflow-scrolling: touch;
-}
-
-.poi-list::after {
-  content: "";
-  display: block;
-  flex-shrink: 0;
-  height: max(148px, calc(90px + env(safe-area-inset-bottom)));
 }
 
 .poi-card {
   height: 144px;
   width: 100%;
   flex-shrink: 0;
-  margin-bottom: -54px;
+  margin-bottom: 16px;
+  scroll-snap-align: center;
+  scroll-snap-stop: always;
   border: 1px solid var(--line);
   border-radius: 18px;
   display: grid;
@@ -951,14 +951,14 @@ input, select {
   padding: 10px;
   text-align: left;
   background: var(--card-bg);
-  box-shadow: 0 8px 24px var(--shadow), 0 2px 6px var(--shadow), inset 0 1px 0 rgba(255,255,255,0.28), inset -3px 0 0 color-mix(in srgb, var(--cat-color, var(--accent)) 80%, transparent);
+  box-shadow: 0 8px 28px var(--shadow), 0 2px 6px var(--shadow), inset 0 1px 0 rgba(255,255,255,0.28), inset -3px 0 0 color-mix(in srgb, var(--cat-color, var(--accent)) 80%, transparent);
   color: var(--ink);
   position: relative;
   overflow: hidden;
   outline: none;
-  transform-origin: bottom center;
+  transform-origin: center center;
   transition: box-shadow 0.2s ease;
-  will-change: transform;
+  will-change: transform, opacity;
 }
 .poi-card:hover {
   box-shadow: 0 18px 40px var(--shadow), 0 4px 10px var(--shadow), inset 0 1px 0 rgba(255,255,255,0.32), inset -3px 0 0 color-mix(in srgb, var(--cat-color, var(--accent)) 100%, transparent);
@@ -966,8 +966,7 @@ input, select {
 .poi-card.active {
   border-color: color-mix(in srgb, var(--accent) 46%, transparent);
   background: var(--card-active-bg);
-  margin-bottom: -54px;
-  box-shadow: 0 24px 48px var(--shadow), 0 6px 16px var(--shadow), inset 4px 0 0 var(--accent), inset -3px 0 0 color-mix(in srgb, var(--cat-color, var(--accent)) 100%, transparent), inset 0 1px 0 rgba(255,255,255,0.28);
+  box-shadow: 0 24px 52px var(--shadow), 0 6px 16px var(--shadow), inset 4px 0 0 var(--accent), inset -3px 0 0 color-mix(in srgb, var(--cat-color, var(--accent)) 100%, transparent), inset 0 1px 0 rgba(255,255,255,0.28);
 }
 .thumb {
   border-radius: 13px;
