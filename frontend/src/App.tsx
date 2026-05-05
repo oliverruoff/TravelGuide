@@ -717,8 +717,8 @@ function PoiVisual({ poi, loading, large = false }: { poi: PoiSummary; loading?:
 
 function PoiCard({
   poi,
-  index,
-  centeredIndex,
+  index = 0,
+  centeredIndex = 0,
   active,
   imageLoading,
   listRef,
@@ -728,15 +728,15 @@ function PoiCard({
   onVisible,
 }: {
   poi: PoiSummary
-  index: number
-  centeredIndex: number
+  index?: number
+  centeredIndex?: number
   active: boolean
   imageLoading?: boolean
-  listRef: React.RefObject<HTMLDivElement | null>
+  listRef?: React.RefObject<HTMLDivElement | null>
   onSelect: () => void
   onOpen: () => void
   onRefresh?: () => void
-  onVisible: (index: number) => void
+  onVisible?: (index: number) => void
 }) {
   const cardRef = useRef<HTMLElement>(null)
 
@@ -744,8 +744,8 @@ function PoiCard({
   // No continuous scroll reading → no feedback loop possible.
   useEffect(() => {
     const el = cardRef.current
-    const root = listRef.current
-    if (!el || !root) return
+    const root = listRef?.current
+    if (!el || !root || !onVisible) return
     const observer = new IntersectionObserver(
       ([entry]) => { if (entry.isIntersecting) onVisible(index) },
       { root, threshold: 0.5 }
