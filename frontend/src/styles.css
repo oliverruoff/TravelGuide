@@ -924,30 +924,17 @@ input, select {
   min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
-  /* Vertical padding set dynamically via JS ResizeObserver (= half container height)
-     so first/last card can reach the center snap point. Static fallback: 160px. */
-  padding: 160px 10px;
-  scroll-snap-type: y mandatory;
-  /* scroll-padding aligns snap targets to the visible center of the container */
-  scroll-padding-top: 50%;
-  scroll-padding-bottom: 50%;
+  padding: 12px 10px 120px;
+  display: flex;
+  flex-direction: column;
   -webkit-overflow-scrolling: touch;
 }
 
-/* Snap target: stable in layout, never transformed */
-.poi-card-snap {
+.poi-card {
   width: 100%;
   height: 144px;
   flex-shrink: 0;
-  margin-bottom: 16px;
-  scroll-snap-align: center;
-  scroll-snap-stop: always;
-}
-
-/* Visual card: fills snap target, transforms applied here don't affect layout */
-.poi-card {
-  width: 100%;
-  height: 100%;
+  margin-bottom: 12px;
   border: 1px solid var(--line);
   border-radius: 18px;
   display: grid;

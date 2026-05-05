@@ -1,14 +1,11 @@
-import { AnimatePresence, motion, useDragControls, useScroll, useTransform } from 'framer-motion'
+import { AnimatePresence, motion, useDragControls } from 'framer-motion'
 import { Award, Bookmark, Compass, Filter, Info, LocateFixed, MapPin, Moon, MousePointer2, Pin, PinOff, Play, PlusCircle, RefreshCw, Sparkles, Sun, Volume2, X } from 'lucide-react'
 import maplibregl from 'maplibre-gl'
-import { type PointerEvent, createContext, useContext, useEffect, useMemo, useRef, useState } from 'react'
+import { type PointerEvent, useEffect, useMemo, useRef, useState } from 'react'
 import { enrichPoi, getCandidates, getRuntimeConfig, selectPois, streamDetail, verifyPassword } from './api'
 import { db, markVisited, savePoi, deletePoi, unlockAchievement, getCachedScan, putCachedScan, clearCachedScan, getCachedDetail, putCachedDetail, updatePoiDetailText, type StoredPoi } from './db'
 import { useAppStore } from './store'
 import type { GeoFix, PoiSummary } from './types'
-
-// Shared ref context so PoiCard can access the list scroll container
-const ListRefContext = createContext<React.RefObject<HTMLDivElement | null>>({ current: null })
 
 const fallbackBerlin: GeoFix = { latitude: 52.520008, longitude: 13.404954, accuracyMeters: 9999, timestamp: Date.now() }
 const savedFakeGeoKey = 'travelguide.fakeGeo'
@@ -720,7 +717,6 @@ function PoiVisual({ poi, loading, large = false }: { poi: PoiSummary; loading?:
 
 function PoiCard({
   poi,
-  index,
   active,
   imageLoading,
   onSelect,
@@ -728,45 +724,20 @@ function PoiCard({
   onRefresh
 }: {
   poi: PoiSummary
-  index: number
   active: boolean
   imageLoading?: boolean
   onSelect: () => void
   onOpen: () => void
   onRefresh?: () => void
 }) {
-  const snapRef = useRef<HTMLDivElement>(null)
-  const listRef = useContext(ListRefContext)
-
-  // Track this card's position inside the scroll container.
-  // We measure the OUTER snap div so the scroll position is stable.
-  const { scrollYProgress } = useScroll({
-    target: snapRef,
-    container: listRef,
-    offset: ['start end', 'end start'],
-  })
-
-  // Visual-only transforms applied to the INNER article, not the snap target.
-  // No `y` — vertical translation fights scroll-snap and causes jumping.
-  const scale   = useTransform(scrollYProgress, [0, 0.35, 0.5, 0.65, 1], [0.82, 0.94, 1.0, 0.94, 0.82])
-  const opacity = useTransform(scrollYProgress, [0, 0.25, 0.4, 0.6, 0.75, 1], [0.3, 0.7, 1.0, 1.0, 0.7, 0.3])
-
   function handleSelect() {
     onSelect()
-    snapRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
   }
 
   return (
-    // Outer div: stable snap target — zero transforms, just height + margin
-    <div
-      ref={snapRef}
-      className="poi-card-snap"
-      style={{ '--cat-color': getCategoryColor(poi.category) } as React.CSSProperties}
-    >
-    {/* Inner article: visual transforms only, never affects layout */}
-    <motion.article
+    <article
       className={`poi-card ${active ? 'active' : ''}`}
-      style={{ scale, opacity, zIndex: active ? 50 : Math.max(1, 40 - index) } as unknown as React.CSSProperties}
+      style={{ '--cat-color': getCategoryColor(poi.category) } as React.CSSProperties}
       onClick={handleSelect}
       role="button"
       tabIndex={0}
@@ -808,8 +779,7 @@ function PoiCard({
           <RefreshCw size={11} />
         </button>
       )}
-    </motion.article>
-    </div>
+    </article>
   )
 }
 
@@ -1097,7 +1067,7 @@ function DetailCard({ poi, userGeo, onClose }: { poi: PoiSummary; userGeo?: GeoF
             style={{ position: 'absolute', pointerEvents: 'none', originX: 0.5, originY: 0.5 }}
           >
             <div className="save-copy-inner">
-              <PoiCard poi={poi} index={0} active={false} onSelect={() => {}} onOpen={() => {}} />
+              <PoiCard poi={poi} active={false} onSelect={() => {}} onOpen={() => {}} />
             </div>
           </motion.div>
         )}
@@ -1153,7 +1123,6 @@ function SavedDrawer({ onClose, onOpenGuide }: { onClose: () => void; onOpenGuid
               <div key={item.id} className="saved-poi-wrapper">
                 <PoiCard 
                   poi={item} 
-                  index={0} 
                   active={false} 
                   onSelect={() => undefined} 
                   onOpen={() => handleOpenGuide(item)}
@@ -1330,21 +1299,6 @@ function MainExperience() {
   const locationSourceRef = useRef(locationSource)
   const watchIdRef = useRef<number | undefined>(undefined)
   const lastScanGeoRef = useRef<GeoFix | undefined>(undefined)
-  const listRef = useRef<HTMLDivElement>(null)
-  const [listVPad, setListVPad] = useState(160)
-
-  // Keep top/bottom padding = half the list container height so the first
-  // and last card can always scroll to the center snap position
-  useEffect(() => {
-    const el = listRef.current
-    if (!el) return
-    const ro = new ResizeObserver(([entry]) => {
-      setListVPad(Math.round(entry.contentRect.height / 2))
-    })
-    ro.observe(el)
-    return () => ro.disconnect()
-  }, [])
-
   useEffect(() => {
     locationSourceRef.current = locationSource
   }, [locationSource])
@@ -1706,8 +1660,7 @@ function MainExperience() {
           <button className="icon" onClick={() => setRescanConfirmOpen(true)} disabled={loading} aria-label="Refresh scan"><RefreshCw className={loading ? 'spin' : ''} size={19} /></button>
           <button className="icon" onClick={() => setSavedOpen(true)} aria-label="Saved POIs"><Bookmark size={19} /></button>
         </header>
-        <ListRefContext.Provider value={listRef}>
-            <div className="poi-list" ref={listRef} style={{ paddingTop: listVPad, paddingBottom: listVPad }}>
+            <div className="poi-list">
             {visiblePois.length === 0 && (
               <div className="empty-state">
                 <Play size={24} />
@@ -1724,11 +1677,10 @@ function MainExperience() {
                 )}
               </div>
             )}
-            {visiblePois.map((poi, index) => (
+            {visiblePois.map((poi) => (
               <PoiCard
                 key={poi.id}
                 poi={poi}
-                index={index}
                 active={active?.id === poi.id}
                 imageLoading={imageLoadingIds.has(poi.id)}
                 onSelect={() => setActivePoi(poi)}
@@ -1740,7 +1692,6 @@ function MainExperience() {
               />
             ))}
           </div>
-        </ListRefContext.Provider>
       </section>
       <AnimatePresence>{detailPoi && <DetailCard poi={detailPoi} userGeo={selectedGeo} onClose={() => setDetailPoi(undefined)} />}</AnimatePresence>
       <AnimatePresence>{categoryFilterOpen && <CategoryFilterModal selected={categoryFilters} onChange={setCategoryFilters} onClose={() => setCategoryFilterOpen(false)} />}</AnimatePresence>
