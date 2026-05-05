@@ -735,10 +735,18 @@ function PoiCard({
   return (
     <motion.article
       className={`poi-card ${active ? 'active' : ''}`}
-      style={{ '--cat-color': getCategoryColor(poi.category) } as React.CSSProperties}
-      initial={{ opacity: 0, y: 16, rotateX: -8 }}
-      animate={{ opacity: 1, y: 0, rotateX: 0 }}
-      transition={{ delay: index * 0.045 }}
+      style={{
+        '--cat-color': getCategoryColor(poi.category),
+        zIndex: Math.max(1, 40 - index),
+      } as React.CSSProperties}
+      initial={{ opacity: 0, y: 20, rotate: index % 2 === 0 ? -1.2 : 1.2 }}
+      animate={{
+        opacity: 1,
+        y: active ? -10 : 0,
+        rotate: active ? 0 : (index % 2 === 0 ? -0.7 : 0.7),
+      }}
+      whileHover={{ y: active ? -10 : -6, rotate: 0 }}
+      transition={{ delay: index * 0.045, type: 'spring', stiffness: 260, damping: 22 }}
       onClick={onSelect}
       role="button"
       tabIndex={0}
