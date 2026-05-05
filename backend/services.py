@@ -321,6 +321,35 @@ async def minimax_tts(settings: Settings, text: str, language: str) -> bytes:
     return bytes.fromhex(audio_hex)
 
 
+_GENERIC_ONE_LINER_PREFIX = "Real nearby map point"
+
+_CATEGORY_LABELS: dict[str, str] = {
+    "museum": "museum", "gallery": "gallery", "artwork": "artwork", "sculpture": "sculpture",
+    "historic": "historic site", "monument": "monument", "memorial": "memorial",
+    "ruins": "ruins", "castle": "castle", "fort": "fort", "tower": "tower",
+    "church": "church", "chapel": "chapel", "cathedral": "cathedral",
+    "mosque": "mosque", "synagogue": "synagogue", "temple": "temple",
+    "viewpoint": "viewpoint", "peak": "peak", "hill": "hill",
+    "park": "park", "garden": "garden", "nature_reserve": "nature reserve",
+    "waterfall": "waterfall", "river": "river", "lake": "lake",
+    "restaurant": "restaurant", "cafe": "café", "bar": "bar", "pub": "pub",
+    "hotel": "hotel", "hostel": "hostel",
+    "attraction": "attraction", "zoo": "zoo", "aquarium": "aquarium",
+    "theatre": "theatre", "cinema": "cinema", "library": "library",
+    "information": "information point", "trail": "trail",
+}
+
+def _friendly_one_liner(category_tag: str, distance_m: int) -> str:
+    label = _CATEGORY_LABELS.get(category_tag.lower(), category_tag.replace("_", " "))
+    dist = f"{distance_m} m" if distance_m < 1000 else f"{distance_m / 1000:.1f} km"
+    return f"A {label} about {dist} away."
+
+
+def _category_one_liner(category: str) -> str:
+    label = _CATEGORY_LABELS.get(category.lower(), category.replace("_", " "))
+    return f"A notable {label} worth exploring nearby."
+
+
 def heuristic_select(candidates: list[RawGeoCandidate]) -> list[PoiSummary]:
     def score(candidate: RawGeoCandidate) -> tuple[int, float]:
         return (-travel_candidate_score(candidate), candidate.distanceMeters)
@@ -336,7 +365,7 @@ def heuristic_select(candidates: list[RawGeoCandidate]) -> list[PoiSummary]:
             lat=item.lat,
             lng=item.lng,
             category=item.tags.get("tourism") or item.tags.get("historic") or item.tags.get("amenity") or item.tags.get("place") or item.tags.get("waterway") or "Local place",
-            oneLiner=f"Real nearby map point, about {round(item.distanceMeters)} m away.",
+            oneLiner=_friendly_one_liner(item.tags.get("tourism") or item.tags.get("historic") or item.tags.get("amenity") or item.tags.get("place") or "place", round(item.distanceMeters)),
             confidence=0.45,
             sourceRefs=["OpenStreetMap"],
         )
@@ -444,7 +473,7 @@ async def select_pois(settings: Settings, candidates: list[RawGeoCandidate], lan
                     lat=candidate.lat,
                     lng=candidate.lng,
                     category=str(item.get("category") or candidate.tags.get("tourism") or candidate.tags.get("amenity") or candidate.tags.get("place") or "Local place"),
-                    oneLiner=str(item.get("oneLiner") or f"Real nearby map point, about {round(candidate.distanceMeters)} m away."),
+                    oneLiner=str(item.get("oneLiner") or _friendly_one_liner(candidate.tags.get("tourism") or candidate.tags.get("historic") or candidate.tags.get("amenity") or candidate.tags.get("place") or "place", round(candidate.distanceMeters))),
                     confidence=float(item.get("confidence") or 0.6),
                     sourceRefs=["OpenStreetMap"],
                 )
@@ -848,6 +877,10 @@ async def enrich_poi(settings: Settings, poi: PoiSummary, language: str) -> PoiS
                 except Exception:
                     pass
 
+        # Clear generic placeholder so the LLM is forced to produce a real one-liner
+        if poi.oneLiner.startswith(_GENERIC_ONE_LINER_PREFIX):
+            poi.oneLiner = ""
+
         # ── LLM: derive category + oneLiner from whichever source we have ─────
         prompt = render_prompt(
             "poi_enrich_user.txt",
@@ -871,6 +904,10 @@ async def enrich_poi(settings: Settings, poi: PoiSummary, language: str) -> PoiS
         except Exception:
             if snippets and snippets[0].get("description"):
                 poi.oneLiner = snippets[0]["description"][:140]
+
+        # If oneLiner is still empty after enrichment, generate a friendly category-aware fallback
+        if not poi.oneLiner:
+            poi.oneLiner = _category_one_liner(poi.category)
 
         poi.imageUrl = image_url or poi.imageUrl
         if not poi.imageUrl:

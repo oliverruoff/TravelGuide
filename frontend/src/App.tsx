@@ -739,11 +739,11 @@ function PoiCard({
         '--cat-color': getCategoryColor(poi.category),
         zIndex: Math.max(1, 40 - index),
       } as React.CSSProperties}
-      initial={{ opacity: 0, y: 20, rotate: index % 2 === 0 ? -1.2 : 1.2 }}
+      initial={{ opacity: 0, y: 20, rotate: index % 2 === 0 ? -2 : 2 }}
       animate={{
         opacity: 1,
         y: active ? -10 : 0,
-        rotate: active ? 0 : (index % 2 === 0 ? -0.7 : 0.7),
+        rotate: active ? 0 : (index % 2 === 0 ? -1.2 : 1.2),
       }}
       whileHover={{ y: active ? -10 : -6, rotate: 0 }}
       transition={{ delay: index * 0.045, type: 'spring', stiffness: 260, damping: 22 }}
