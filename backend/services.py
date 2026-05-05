@@ -344,11 +344,23 @@ def heuristic_select(candidates: list[RawGeoCandidate]) -> list[PoiSummary]:
     ]
 
 
-async def select_pois(settings: Settings, candidates: list[RawGeoCandidate], language: str, category_filters: list[str] | None = None) -> list[PoiSummary]:
+async def select_pois(settings: Settings, candidates: list[RawGeoCandidate], language: str, category_filters: list[str] | None = None, exclude_names: list[str] | None = None) -> list[PoiSummary]:
     if not candidates:
         return []
     category_filters = category_filters or []
+    exclude_names = exclude_names or []
     filtered_candidates = [candidate for candidate in candidates if candidate_matches_category_filters(candidate, category_filters)]
+    if not filtered_candidates:
+        return []
+
+    # When finding more POIs, exclude already-shown places by normalized name
+    exclude_keys: set[str] = {normalize_name_key(n) for n in exclude_names}
+    if exclude_keys:
+        filtered_candidates = [
+            c for c in filtered_candidates
+            if normalize_name_key(poi_research_name(c)) not in exclude_keys
+            and normalize_name_key(c.name) not in exclude_keys
+        ]
     if not filtered_candidates:
         return []
 
@@ -389,10 +401,16 @@ async def select_pois(settings: Settings, candidates: list[RawGeoCandidate], lan
         }
         for c in filtered_candidates[:60]
     ]
+    exclude_instruction = (
+        f"Do NOT include any of these already-shown places (skip them entirely): {', '.join(exclude_names)}."
+        if exclude_names
+        else ""
+    )
     prompt = render_prompt(
         "poi_select_user.txt",
         language=language,
         category_filters=", ".join(category_filters) if category_filters else "all categories",
+        exclude_instruction=exclude_instruction,
         candidates_json=json.dumps(compact, ensure_ascii=False),
     )
     try:

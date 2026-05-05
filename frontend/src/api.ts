@@ -76,10 +76,10 @@ export async function getCandidates(lat: number, lng: number): Promise<RawGeoCan
   return response.json()
 }
 
-export async function selectPois(candidates: RawGeoCandidate[], language: string, categoryFilters: string[] = []): Promise<PoiSummary[]> {
+export async function selectPois(candidates: RawGeoCandidate[], language: string, categoryFilters: string[] = [], excludeNames: string[] = []): Promise<PoiSummary[]> {
   const response = await apiFetch('/api/poi/select', {
     method: 'POST',
-    body: JSON.stringify({ candidates, language, categoryFilters }),
+    body: JSON.stringify({ candidates, language, categoryFilters, excludeNames }),
   })
   if (!response.ok) throw new Error('Could not select POIs')
   return response.json()

@@ -1,5 +1,5 @@
 import { AnimatePresence, motion, useDragControls } from 'framer-motion'
-import { Award, Bookmark, Compass, Filter, Info, LocateFixed, MapPin, Moon, MousePointer2, Pin, PinOff, Play, RefreshCw, Sparkles, Sun, Volume2, X } from 'lucide-react'
+import { Award, Bookmark, Compass, Filter, Info, LocateFixed, MapPin, Moon, MousePointer2, Pin, PinOff, Play, PlusCircle, RefreshCw, Sparkles, Sun, Volume2, X } from 'lucide-react'
 import maplibregl from 'maplibre-gl'
 import { type PointerEvent, useEffect, useMemo, useRef, useState } from 'react'
 import { enrichPoi, getCandidates, getRuntimeConfig, selectPois, streamDetail, verifyPassword } from './api'
@@ -1297,6 +1297,7 @@ function MainExperience() {
   const [fakeLocationMode, setFakeLocationMode] = useState(false)
   const [categoryFilters, setCategoryFilters] = useState<CategoryFilterId[]>(readStoredCategoryFilters)
   const [locationSource, setLocationSource] = useState<'gps' | 'demo' | 'fake'>(() => readSavedFakeGeo() ? 'fake' : 'demo')
+  const [findMoreMsg, setFindMoreMsg] = useState<string | null>(null)
   const locationSourceRef = useRef(locationSource)
   const watchIdRef = useRef<number | undefined>(undefined)
   const lastScanGeoRef = useRef<GeoFix | undefined>(undefined)
@@ -1396,6 +1397,53 @@ function MainExperience() {
     setRescanConfirmOpen(false)
     await clearCachedScan(selectedGeo.latitude, selectedGeo.longitude, scanCacheLanguage)
     scan('replace', selectedGeo)
+  }
+
+  async function findMorePois() {
+    setLoading(true)
+    setStatus('Searching for more...')
+    try {
+      const currentPois = useAppStore.getState().pois
+      const excludeNames = currentPois.map((p) => p.researchName ?? p.name)
+      const candidates = await getCandidates(selectedGeo.latitude, selectedGeo.longitude)
+      const selected = uniquePoisByName(await selectPois(candidates, language, categoryFilters, excludeNames))
+      const existingIds = new Set(currentPois.map((p) => p.id))
+      const incoming = selected.filter((poi) => !existingIds.has(poi.id))
+      if (incoming.length === 0) {
+        setFindMoreMsg('No further places found')
+        setTimeout(() => setFindMoreMsg(null), 3000)
+        setStatus('Ready.')
+        return
+      }
+      setStatus(`Loading ${incoming.length} more cards...`)
+      const CONCURRENCY = 3
+      const loadedIncoming: PoiSummary[] = [...incoming]
+      for (const poi of incoming) {
+        setPois([...useAppStore.getState().pois, poi].slice(0, maxPoiListItems))
+        setImageLoadingIds((ids) => new Set(ids).add(poi.id))
+      }
+      for (let i = 0; i < incoming.length; i += CONCURRENCY) {
+        await Promise.all(
+          incoming.slice(i, i + CONCURRENCY).map(async (poi) => {
+            try {
+              const enriched = await enrichPoi(poi, language)
+              const idx = loadedIncoming.findIndex((p) => p.id === enriched.id)
+              if (idx >= 0) loadedIncoming[idx] = enriched
+              setPois(useAppStore.getState().pois.map((p) => p.id === enriched.id ? enriched : p).slice(0, maxPoiListItems))
+              if (useAppStore.getState().activePoi?.id === enriched.id) setActivePoi(enriched)
+              setDetailPoi((current) => current?.id === enriched.id ? enriched : current)
+            } finally {
+              setImageLoadingIds((ids) => { const next = new Set(ids); next.delete(poi.id); return next })
+            }
+          })
+        )
+      }
+      setStatus('Ready.')
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : 'Search failed')
+    } finally {
+      setLoading(false)
+    }
   }
 
   useEffect(() => {
@@ -1611,6 +1659,7 @@ function MainExperience() {
               )}
             </AnimatePresence>
           </div>
+          <button className="icon find-more-btn" onClick={findMorePois} disabled={loading} aria-label="Find more places"><PlusCircle size={17} /></button>
           <button className="icon" onClick={() => setRescanConfirmOpen(true)} disabled={loading} aria-label="Refresh scan"><RefreshCw className={loading ? 'spin' : ''} size={19} /></button>
           <button className="icon" onClick={() => setSavedOpen(true)} aria-label="Saved POIs"><Bookmark size={19} /></button>
         </header>
@@ -1651,6 +1700,19 @@ function MainExperience() {
       <AnimatePresence>{detailPoi && <DetailCard poi={detailPoi} userGeo={selectedGeo} onClose={() => setDetailPoi(undefined)} />}</AnimatePresence>
       <AnimatePresence>{categoryFilterOpen && <CategoryFilterModal selected={categoryFilters} onChange={setCategoryFilters} onClose={() => setCategoryFilterOpen(false)} />}</AnimatePresence>
       <AnimatePresence>{savedOpen && <SavedDrawer onClose={() => setSavedOpen(false)} onOpenGuide={setDetailPoi} />}</AnimatePresence>
+      <AnimatePresence>
+        {findMoreMsg && (
+          <motion.div
+            className="find-more-toast"
+            initial={{ opacity: 0, y: -8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
+            transition={{ duration: 0.2 }}
+          >
+            {findMoreMsg}
+          </motion.div>
+        )}
+      </AnimatePresence>
       <AnimatePresence>
         {rescanConfirmOpen && (
           <>

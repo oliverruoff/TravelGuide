@@ -316,6 +316,32 @@ input, select {
   opacity: 0.88;
 }
 
+/* Find-more button — slightly more subdued than the normal icon */
+.find-more-btn {
+  opacity: 0.45;
+}
+.find-more-btn:hover {
+  opacity: 0.75;
+}
+
+/* "No further places found" toast */
+.find-more-toast {
+  position: fixed;
+  top: 68px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 120;
+  background: var(--surface-strong);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+  padding: 8px 16px;
+  border-radius: 20px;
+  box-shadow: 0 4px 16px var(--deep-shadow);
+  white-space: nowrap;
+  pointer-events: none;
+}
+
 .location-info-card {
   position: fixed;
   top: 50%;

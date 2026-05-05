@@ -43,6 +43,7 @@ class PoiSelectRequest(BaseModel):
     language: str = "en"
     categoryFilters: list[str] = Field(default_factory=list)
     candidates: list[RawGeoCandidate]
+    excludeNames: list[str] = Field(default_factory=list)
 
 
 class PoiEnrichRequest(BaseModel):
