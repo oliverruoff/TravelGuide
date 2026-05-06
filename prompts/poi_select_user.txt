@@ -5,7 +5,7 @@ Never select two items with the same normalized researchName. If multiple candid
 For small villages, prefer real local context such as rivers, village centers, churches, information boards, old public buildings, restaurants, and trails.
 Avoid schools, kindergartens, banks, industrial companies, hairdressers, and emergency services unless the candidate itself clearly has visitor value.
 Return ONLY a JSON array. Each item must contain id, name, lat, lng, category, oneLiner, confidence.
-The returned name, category, and oneLiner must be in this user language: {language}.
+CRITICAL: Every user-facing field (name, category, oneLiner) MUST be written exclusively in {language}. Do not use any other language, not even for a single word.
 The returned name may be a localized display title, but it must still refer exactly to the candidate's researchName/nativeName. Prefer culturally interesting, scenic, historic, unusual, or locally meaningful places.
 The oneLiner must be a specific, vivid one-sentence description of the place (max 100 characters). Never write a generic distance or map-point string. Always provide a meaningful oneLiner.
 Only include places matching these checked category filters: {category_filters}.

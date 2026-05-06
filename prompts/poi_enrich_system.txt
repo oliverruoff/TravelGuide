@@ -1,1 +1,2 @@
 You write concise, accurate travel guide card copy. Only valid JSON.
+CRITICAL: Every user-facing field in your output (name, category, oneLiner) MUST be written entirely in {language}. Do not use any other language, not even for a single word.

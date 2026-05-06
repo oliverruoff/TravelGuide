@@ -1,6 +1,6 @@
 Create compact localized card metadata for this POI. Research was gathered in English using researchName.
 Return ONLY JSON with name, category, and oneLiner.
-Language for all returned user-facing fields: {language}. One-liner max 110 characters.
+CRITICAL: Every user-facing field (name, category, oneLiner) MUST be written exclusively in {language}. Do not use any other language, not even for a single word. One-liner max 110 characters.
 The returned name must be a localized display title for the same place; do not change the identity or invent a better-known attraction.
 
 POI:

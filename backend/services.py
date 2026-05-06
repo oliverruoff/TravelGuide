@@ -25,6 +25,40 @@ _enrich_cache: dict[tuple[str, str], "PoiSummary"] = {}
 
 PROMPTS_DIR = Path(__file__).resolve().parents[1] / "prompts"
 
+# Maps BCP-47 language codes to full English language names for use in LLM prompts.
+# Full names are far more reliable as LLM instructions than short codes like "de" or "fr".
+LANGUAGE_NAMES: dict[str, str] = {
+    "en": "English",
+    "de": "German",
+    "fr": "French",
+    "es": "Spanish",
+    "it": "Italian",
+    "pt": "Portuguese",
+    "nl": "Dutch",
+    "pl": "Polish",
+    "ru": "Russian",
+    "zh": "Chinese",
+    "ja": "Japanese",
+    "ko": "Korean",
+    "ar": "Arabic",
+    "tr": "Turkish",
+    "sv": "Swedish",
+    "da": "Danish",
+    "fi": "Finnish",
+    "nb": "Norwegian",
+    "cs": "Czech",
+    "hu": "Hungarian",
+}
+
+
+def language_display_name(code: str) -> str:
+    """Return the full language name for a BCP-47 code (e.g. 'de' → 'German').
+
+    Falls back to the raw code if no mapping exists, so unknown locales still
+    produce a usable prompt instruction.
+    """
+    return LANGUAGE_NAMES.get(code.lower().split("-")[0], code)
+
 
 @lru_cache(maxsize=None)
 def load_prompt(name: str) -> str:
@@ -435,9 +469,10 @@ async def select_pois(settings: Settings, candidates: list[RawGeoCandidate], lan
         if exclude_names
         else ""
     )
+    lang_name = language_display_name(language)
     prompt = render_prompt(
         "poi_select_user.txt",
-        language=language,
+        language=lang_name,
         category_filters=", ".join(category_filters) if category_filters else "all categories",
         exclude_instruction=exclude_instruction,
         candidates_json=json.dumps(compact, ensure_ascii=False),
@@ -446,7 +481,7 @@ async def select_pois(settings: Settings, candidates: list[RawGeoCandidate], lan
         response = await minimax_chat(
             settings,
             [
-                {"role": "system", "content": load_prompt("poi_select_system.txt")},
+                {"role": "system", "content": render_prompt("poi_select_system.txt", language=lang_name)},
                 {"role": "user", "content": prompt},
             ],
         )
@@ -882,9 +917,10 @@ async def enrich_poi(settings: Settings, poi: PoiSummary, language: str) -> PoiS
             poi.oneLiner = ""
 
         # ── LLM: derive category + oneLiner from whichever source we have ─────
+        lang_name = language_display_name(language)
         prompt = render_prompt(
             "poi_enrich_user.txt",
-            language=language,
+            language=lang_name,
             poi_json=poi.model_dump_json(),
             sources_json=json.dumps(snippets, ensure_ascii=False),
         )
@@ -892,7 +928,7 @@ async def enrich_poi(settings: Settings, poi: PoiSummary, language: str) -> PoiS
             response = await minimax_chat(
                 settings,
                 [
-                    {"role": "system", "content": load_prompt("poi_enrich_system.txt")},
+                    {"role": "system", "content": render_prompt("poi_enrich_system.txt", language=lang_name)},
                     {"role": "user", "content": prompt},
                 ],
             )
@@ -952,9 +988,10 @@ def safe_detail_fallback(poi: PoiSummary, sources: list[dict[str, Any]], languag
 
 
 async def detail_text_completion(settings: Settings, poi: PoiSummary, sources: list[dict[str, Any]], language: str) -> str:
+    lang_name = language_display_name(language)
     prompt = render_prompt(
         "detail_completion_user.txt",
-        language=language,
+        language=lang_name,
         poi_name=poi.name,
         poi_json=poi.model_dump_json(),
         sources_json=json.dumps(sources, ensure_ascii=False),
@@ -962,7 +999,7 @@ async def detail_text_completion(settings: Settings, poi: PoiSummary, sources: l
     response = await minimax_chat(
         settings,
         [
-            {"role": "system", "content": load_prompt("detail_completion_system.txt")},
+            {"role": "system", "content": render_prompt("detail_completion_system.txt", language=lang_name)},
             {"role": "user", "content": prompt},
         ],
     )

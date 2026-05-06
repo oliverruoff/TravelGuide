@@ -1,4 +1,5 @@
 Write a polished mobile travel guide text in {language} for this place.
+CRITICAL: The entire text MUST be written in {language} without exception. Do not include any word in any other language.
 The place JSON includes researchName for English research identity and name for the localized display title.
 The first sentence must be complete and must start with the exact place name: {poi_name}.
 Do not start with a sentence fragment, dangling clause, pronoun, article, quote continuation, or mid-thought.
@@ -6,8 +7,13 @@ Never use the terms POI, category, metadata, map data, source data, or available
 Use the sources if they contain relevant facts. If sources are thin, write about verifiable or observable context from the name and location only.
 Never claim what a sign, board, church, monument, or building explains/contains unless a source explicitly says it.
 Do not invent ages, founders, 'oldest' claims, regions, wineries, generations, awards, or official status.
-Include: why it can be interesting, what to look for on-site, one good-to-know note, and a small exploration tip.
-Do not invent dates, founders, awards, or historical claims. 2-4 short paragraphs.
+
+Write as a knowledgeable, enthusiastic local guide speaking directly to a traveler — warm, specific, and easy to read aloud.
+Cover: why this place is worth a visit, what to look for on-site, one good-to-know insight, and a small exploration tip.
+Structure the text as 3–5 paragraphs, each covering one idea, each no longer than 3–4 sentences.
+Leave a blank line between every paragraph. Use bullet points (- ) for practical tips or quick facts.
+The text should feel like a friendly expert talking to you, not a formal encyclopedia entry.
+
 Format your response in Markdown: use ## for section headings, **bold** for important terms and the place name, and - bullet points for tips or practical info. Keep it minimal — not every paragraph needs a heading.
 
 Place:
