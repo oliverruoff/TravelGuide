@@ -564,25 +564,26 @@ def _strip_markup(text: str) -> str:
 
 
 def _detail_queries(poi: PoiSummary, language: str = "en", city: str | None = None) -> list[str]:
+    """Build Brave search queries for a POI.
+
+    Single, tight query: quoted POI name + quoted city. No English-language
+    suffixes like "history" or "attraction visit" — those degrade results
+    when the POI is in a non-English-speaking region.
+    """
     name = poi_research_name(poi)
     compact_name = " ".join(token for token in re.split(r"\s+", name) if token)
-    # Quote the city so Brave treats it as a required phrase, not a soft signal
     city_part = f' "{city}"' if city else ""
-    return [
-        f'"{compact_name}"{city_part}',
-        f'"{compact_name}"{city_part} history',
-        f'"{compact_name}"{city_part} attraction visit',
-    ]
+    return [f'"{compact_name}"{city_part}']
 
 
 async def detail_sources(settings: Settings, poi: PoiSummary, language: str = "en", city: str | None = None) -> list[dict[str, Any]]:
     collected: list[dict[str, Any]] = []
     for query in _detail_queries(poi, language, city=city):
         try:
-            web = await brave_search(settings, query)
+            web = await brave_search(settings, query, count=8)
         except Exception:
             continue
-        results = web.get("web", {}).get("results", [])[:4]
+        results = web.get("web", {}).get("results", [])[:8]
         if city:
             city_results = [r for r in results if _result_mentions_city(r, city)]
             results = city_results or results
@@ -638,29 +639,23 @@ def _wiki_title_matches_poi(poi_name: str, wiki_title: str) -> bool:
     return hits / len(significant) >= 0.6
 
 
-async def wikipedia_data(
+async def _fetch_wikipedia_single(
     name: str,
     city: str | None,
-    language: str,
+    lang: str,
 ) -> dict[str, Any] | None:
-    """Search Wikipedia for a POI and return image URL + extract if confident.
+    """Fetch a single Wikipedia article in the given language wiki.
 
     Two-step: MediaWiki search to find the correct article title, then REST
-    summary API for the image thumbnail and plain-text extract. Applies two
-    confidence gates before trusting the result:
-      1. Title match: ≥60% of significant POI-name words appear in the article title.
-      2. City match (strict): if we know the city, the city name must appear in
-         the article title or its extract — prevents using articles about
-         same-named places in different cities.
-    Returns None on any failure or low-confidence match.
+    summary API for the image thumbnail and plain-text extract. Applies the
+    title-match confidence gate (≥60% significant-word overlap) before
+    trusting the result. Returns None on any failure or low-confidence match.
     """
-    lang = "en"
     headers = {"User-Agent": "TravelGuideGenAI/0.1 (local prototype; olive@example.local)"}
     search_query = f"{name} {city}" if city else name
 
     try:
         async with httpx.AsyncClient(timeout=8, headers=headers, follow_redirects=True) as client:
-            # Step 1: find article title via full-text search (no guessing variants)
             search_resp = await client.get(
                 f"https://{lang}.wikipedia.org/w/api.php",
                 params={
@@ -677,7 +672,6 @@ async def wikipedia_data(
             if not hits:
                 return None
 
-            # Gate 1: title must match POI name with ≥60% significant-word overlap
             title = None
             for hit in hits:
                 if _wiki_title_matches_poi(name, hit["title"]):
@@ -686,7 +680,6 @@ async def wikipedia_data(
             if not title:
                 return None
 
-            # Step 2: fetch summary for image + extract
             summary_resp = await client.get(
                 f"https://{lang}.wikipedia.org/api/rest_v1/page/summary/{quote(title)}"
             )
@@ -695,12 +688,10 @@ async def wikipedia_data(
             data = summary_resp.json()
             extract = data.get("extract") or ""
 
-            # City is a soft disambiguation hint because reverse-geocoded city
-            # names can differ by language/script from English research pages.
             if city:
                 city_lower = city.lower()
                 if city_lower not in title.lower() and city_lower not in extract.lower():
-                    logger.debug("Wikipedia city hint did not match for %s in %s", name, city)
+                    logger.debug("Wikipedia city hint did not match for %s in %s (%s)", name, city, lang)
 
             image_url = (data.get("thumbnail") or {}).get("source")
             wiki_url = (
@@ -712,9 +703,49 @@ async def wikipedia_data(
                 "extract": extract,
                 "image_url": image_url,
                 "wiki_url": wiki_url,
+                "source_lang": lang,
             }
     except Exception:
         return None
+
+
+async def wikipedia_data(
+    name: str,
+    city: str | None,
+    language: str,
+) -> dict[str, Any] | None:
+    """Fetch Wikipedia data for a POI, querying both English and the target
+    language wiki in parallel and merging the results.
+
+    Returns a dict with:
+      - title, extract, image_url, wiki_url   → primary (richer) result
+      - sources: list of all valid Wikipedia hits (1 or 2 entries)
+    so the LLM can synthesize from English + native-language material.
+    Returns None if neither wiki gives a confident hit.
+    """
+    target_lang = (language or "en").lower().split("-")[0]
+    languages_to_try = ["en"] if target_lang == "en" else ["en", target_lang]
+
+    results = await asyncio.gather(
+        *[_fetch_wikipedia_single(name, city, lang) for lang in languages_to_try],
+        return_exceptions=True,
+    )
+    valid = [r for r in results if isinstance(r, dict) and r.get("extract")]
+    if not valid:
+        return None
+
+    # Pick richest extract as primary; prefer native-language image when available
+    primary = max(valid, key=lambda r: len(r.get("extract") or ""))
+    native = next((r for r in valid if r.get("source_lang") == target_lang), None)
+    image_url = (native.get("image_url") if native else None) or primary.get("image_url")
+
+    return {
+        "title": primary["title"],
+        "extract": primary["extract"],
+        "image_url": image_url,
+        "wiki_url": primary["wiki_url"],
+        "sources": valid,
+    }
 
 
 IMAGE_STOPWORDS = {
@@ -866,11 +897,17 @@ async def enrich_poi(settings: Settings, poi: PoiSummary, language: str) -> PoiS
 
         if wiki_hit:
             image_url = wiki["image_url"]
-            snippets = [{
-                "title": wiki["title"],
-                "description": wiki["extract"],
-                "url": wiki["wiki_url"],
-            }]
+            # Use ALL Wikipedia sources (English + native-language if both exist)
+            # so the LLM has both source materials to synthesize a localized result from.
+            wiki_sources = wiki.get("sources") or [wiki]
+            snippets = [
+                {
+                    "title": s["title"],
+                    "description": s["extract"],
+                    "url": s["wiki_url"],
+                }
+                for s in wiki_sources
+            ]
         else:
             # ── Brave fallback ─────────────────────────────────────────────────
             web_query = f'"{research_name}" {poi.category}{city_suffix}'
@@ -1037,21 +1074,29 @@ async def stream_detail(settings: Settings, poi: PoiSummary, language: str) -> A
     wiki_extract_rich = wiki is not None and len((wiki.get("extract") or "")) > 200
 
     if wiki_extract_rich:
-        sources = [{
-            "title": wiki["title"],
-            "description": wiki["extract"],
-            "url": wiki["wiki_url"],
-        }]
+        wiki_sources = wiki.get("sources") or [wiki]
+        sources = [
+            {
+                "title": s["title"],
+                "description": s["extract"],
+                "url": s["wiki_url"],
+            }
+            for s in wiki_sources
+        ]
     else:
-        # Fall back to 3 sequential Brave searches
+        # Fall back to Brave search (single, tight name+city query)
         sources = await detail_sources(settings, poi, language, city=city)
         # If Brave returned nothing but Wikipedia had something (thin extract), add it
         if not sources and wiki:
-            sources = [{
-                "title": wiki["title"],
-                "description": wiki.get("extract") or "",
-                "url": wiki["wiki_url"],
-            }]
+            wiki_sources = wiki.get("sources") or [wiki]
+            sources = [
+                {
+                    "title": s["title"],
+                    "description": s.get("extract") or "",
+                    "url": s["wiki_url"],
+                }
+                for s in wiki_sources
+            ]
 
     detail_text = await complete_detail_text(settings, poi, sources, language)
     for word in detail_text.split(" "):

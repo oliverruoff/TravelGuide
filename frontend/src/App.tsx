@@ -14,6 +14,16 @@ const maxPoiListItems = 50
 const movingRefreshDistanceMeters = 140
 const categoryFilterStorageKey = 'travelguide.categoryFilters'
 
+// BCP-47 voice locale map for Web SpeechSynthesis. Covers all backend-supported
+// languages so TTS pronounces in the picked language, not just en/de.
+const SPEECH_LANG_MAP: Record<string, string> = {
+  en: 'en-US', de: 'de-DE', fr: 'fr-FR', es: 'es-ES',
+  it: 'it-IT', pt: 'pt-PT', nl: 'nl-NL', pl: 'pl-PL',
+  ru: 'ru-RU', zh: 'zh-CN', ja: 'ja-JP', ko: 'ko-KR',
+  ar: 'ar-SA', tr: 'tr-TR', sv: 'sv-SE', da: 'da-DK',
+  fi: 'fi-FI', nb: 'nb-NO', cs: 'cs-CZ', hu: 'hu-HU',
+}
+
 const CATEGORY_FILTER_GROUPS = [
   {
     title: 'Culture',
@@ -570,7 +580,13 @@ function MapPanel({
       anchor.appendChild(node)
       const marker = new maplibregl.Marker({ element: anchor, anchor: 'center', offset: [0, 0] }).setLngLat([poi.lng, poi.lat]).addTo(mapRef.current!)
       window.requestAnimationFrame(() => {
-        const overflow = labelText.scrollWidth - label.clientWidth
+        // Compute overflow against the visible text area (clientWidth minus
+        // horizontal padding) so the scroll animation respects right padding
+        // and the text never slides under the rounded right edge of the pill.
+        const styles = window.getComputedStyle(label)
+        const padX = parseFloat(styles.paddingLeft || '0') + parseFloat(styles.paddingRight || '0')
+        const visibleWidth = label.clientWidth - padX
+        const overflow = labelText.scrollWidth - visibleWidth
         if (overflow > 2) {
           labelText.style.setProperty('--label-overflow', `${overflow}px`)
           labelText.classList.add('scrolling')
@@ -895,7 +911,7 @@ function DetailCard({ poi, userGeo, onClose }: { poi: PoiSummary; userGeo?: GeoF
 
   function playBrowserSpeech(speechText: string) {
     const utterance = new SpeechSynthesisUtterance(speechText)
-    utterance.lang = language === 'de' ? 'de-DE' : 'en-US'
+    utterance.lang = SPEECH_LANG_MAP[language] ?? SPEECH_LANG_MAP[language.split('-')[0]] ?? 'en-US'
     utterance.onend = () => setSpeaking(false)
     utterance.onerror = () => setSpeaking(false)
     setSpeaking(true)

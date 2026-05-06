@@ -1,6 +1,7 @@
-Create compact localized card metadata for this POI. Research was gathered in English using researchName.
+Create compact localized card metadata for this POI.
+The research sources below may be in English or in another language — translate and summarize everything into {language}.
 Return ONLY JSON with name, category, and oneLiner.
-CRITICAL: Every user-facing field (name, category, oneLiner) MUST be written exclusively in {language}. Do not use any other language, not even for a single word. One-liner max 110 characters.
+CRITICAL: Every word (name, category, oneLiner) MUST be in {language} exclusively. No other language, not even a single word. Max 110 characters for oneLiner.
 The returned name must be a localized display title for the same place; do not change the identity or invent a better-known attraction.
 
 POI:

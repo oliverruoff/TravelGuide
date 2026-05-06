@@ -1,5 +1,6 @@
 Write a polished mobile travel guide text in {language} for this place.
-CRITICAL: The entire text MUST be written in {language} without exception. Do not include any word in any other language.
+LANGUAGE LOCK: The entire text MUST be in {language} without exception. Do not include any word, phrase, or sentence in any other language.
+The research sources provided below may be in English or in another language. Summarize, translate, and rewrite their content entirely in {language}.
 The place JSON includes researchName for English research identity and name for the localized display title.
 The first sentence must be complete and must start with the exact place name: {poi_name}.
 Do not start with a sentence fragment, dangling clause, pronoun, article, quote continuation, or mid-thought.
